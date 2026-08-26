@@ -15,6 +15,7 @@ import {
   createView,
   DIFFICULTY_POOLS,
   getSpec,
+  lateralSpreadFor,
   pitchPoint,
   type PitchType,
   type View,
@@ -329,11 +330,16 @@ export class GameEngine {
     this.phaseTime = 0;
   }
 
+  /** Difficulty spread combined with the display's aspect correction. */
+  private currentSpread(): number {
+    const config = this.config!;
+    return DIFFICULTY_PRESETS[config.difficulty].spread * lateralSpreadFor(this.view);
+  }
+
   private tryCatch(cursor: CursorSample): CatchEvaluation {
     const config = this.config!;
     const spec = getSpec(this.sequence[this.pitchIndex]);
-    const spread = DIFFICULTY_PRESETS[config.difficulty].spread;
-    const point = pitchPoint(spec, this.flightProgress, spread);
+    const point = pitchPoint(spec, this.flightProgress, this.currentSpread());
     const visual = this.ball.project(point, this.view);
 
     const evaluation = evaluateCatch(
@@ -359,7 +365,7 @@ export class GameEngine {
     if (!config) return 120;
     return resolveCatchRadius(
       config.palmCatchRadiusPx,
-      this.view.height,
+      this.view.focal,
       DIFFICULTY_PRESETS[config.difficulty].catchRadiusScale,
       cursor.source === 'hand' ? cursor.palmRadiusPx : undefined,
     );
@@ -415,8 +421,10 @@ export class GameEngine {
 
     this.pitcher.draw(ctx, this.view, now);
 
-    // Sponsor pedestal, kept out of the pitch corridor.
-    drawProductHero(ctx, width * 0.855, height * 0.66, height * 0.26, now, {
+    // Sponsor pedestal, kept out of the pitch corridor and sized off the shorter
+    // screen axis so it stays proportionate on portrait totems.
+    const heroHeight = Math.min(height * 0.26, width * 0.26);
+    drawProductHero(ctx, width - heroHeight * 0.42, height * 0.66, heroHeight, now, {
       excitement: this.excitement,
       reducedMotion: config.reducedMotion,
       image: this.productImage,
@@ -426,9 +434,8 @@ export class GameEngine {
     // Ball
     if (this.mode === 'playing' && (this.phase === 'flight' || this.phase === 'freeze')) {
       const spec = getSpec(this.sequence[this.pitchIndex]);
-      const spread = DIFFICULTY_PRESETS[config.difficulty].spread;
       const progress = this.phase === 'freeze' ? this.flightProgress : Math.min(1.06, this.flightProgress);
-      const point = pitchPoint(spec, progress, spread);
+      const point = pitchPoint(spec, progress, this.currentSpread());
       const visual = this.ball.draw(ctx, this.view, point, this.spin, progress, {
         reducedMotion: config.reducedMotion,
         frozen: this.phase === 'freeze',

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateCatch, resolveCatchRadius, type BallState, type CatchOptions } from '../game/CatchDetector';
+import { createView } from '../game/Trajectory';
 import type { CursorSample } from '../types';
 
 const cursor = (patch: Partial<CursorSample> = {}): CursorSample => ({
@@ -90,19 +91,30 @@ describe('evaluateCatch', () => {
 });
 
 describe('resolveCatchRadius', () => {
-  it('scales the authored radius with display height', () => {
-    expect(resolveCatchRadius(140, 1080, 1)).toBeCloseTo(140);
-    expect(resolveCatchRadius(140, 2160, 1)).toBeCloseTo(280);
-    expect(resolveCatchRadius(140, 540, 1)).toBeCloseTo(70);
+  const landscape = createView(1920, 1080);
+  const uhd = createView(3840, 2160);
+  const portrait = createView(1080, 1920);
+
+  it('matches the authored radius on the reference display', () => {
+    expect(resolveCatchRadius(140, landscape.focal, 1)).toBeCloseTo(140);
+  });
+
+  it('scales with the scene, not with raw pixel height', () => {
+    expect(resolveCatchRadius(140, uhd.focal, 1)).toBeCloseTo(280);
+    // A portrait totem is taller in pixels but has a *narrower* scene: a
+    // height-based scale would hand the player an absurdly large glove.
+    const portraitRadius = resolveCatchRadius(140, portrait.focal, 1);
+    expect(portraitRadius).toBeLessThan(140);
+    expect(portraitRadius).toBeGreaterThan(100);
   });
 
   it('applies the difficulty multiplier', () => {
-    expect(resolveCatchRadius(140, 1080, 1.25)).toBeCloseTo(175);
-    expect(resolveCatchRadius(140, 1080, 0.82)).toBeCloseTo(114.8);
+    expect(resolveCatchRadius(140, landscape.focal, 1.25)).toBeCloseTo(175);
+    expect(resolveCatchRadius(140, landscape.focal, 0.82)).toBeCloseTo(114.8);
   });
 
   it('blends towards a measured palm when hand tracking is live', () => {
-    const blended = resolveCatchRadius(140, 1080, 1, 200);
+    const blended = resolveCatchRadius(140, landscape.focal, 1, 200);
     expect(blended).toBeGreaterThan(140);
     expect(blended).toBeLessThan(230);
   });

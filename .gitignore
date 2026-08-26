@@ -19,3 +19,11 @@ node_modules
 
 # build output
 dist
+
+# android
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/app/src/main/assets/web/

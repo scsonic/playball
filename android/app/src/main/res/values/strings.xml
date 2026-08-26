@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Catch Challenge</string>
+    <string name="camera_permission_rationale">The camera is used only to track your hand, on this device. Nothing is recorded or uploaded.</string>
+    <string name="status_no_camera">No USB camera detected</string>
+</resources>

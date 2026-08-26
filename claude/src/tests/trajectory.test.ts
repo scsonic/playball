@@ -3,6 +3,7 @@ import {
   buildSequence,
   createView,
   getSpec,
+  lateralSpreadFor,
   PITCH_TYPES,
   pitchPoint,
   project,
@@ -106,5 +107,25 @@ describe('buildSequence', () => {
     const easy: PitchType[] = ['fastball_center', 'high_left', 'low_right'];
     const sequence = buildSequence(8, easy);
     sequence.forEach((type) => expect(easy).toContain(type));
+  });
+});
+
+describe('display adaptation', () => {
+  it('keeps pitches on screen on a portrait totem', () => {
+    const portrait = createView(1080, 1920);
+    const spread = lateralSpreadFor(portrait);
+    expect(spread).toBeLessThan(1);
+    for (const type of PITCH_TYPES) {
+      for (let p = 0; p <= 1; p += 0.05) {
+        const screen = project(pitchPoint(getSpec(type), p, spread), portrait);
+        expect(screen.x).toBeGreaterThan(portrait.width * 0.05);
+        expect(screen.x).toBeLessThan(portrait.width * 0.95);
+      }
+    }
+  });
+
+  it('leaves 16:9 displays at full spread', () => {
+    expect(lateralSpreadFor(createView(1920, 1080))).toBeCloseTo(1, 2);
+    expect(lateralSpreadFor(createView(3840, 2160))).toBeCloseTo(1, 2);
   });
 });

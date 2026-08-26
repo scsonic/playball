@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- USB Video Class: base class 0x0E (video), any subclass/protocol. -->
+<resources>
+    <usb-device class="14" subclass="1" protocol="0" />
+    <usb-device class="14" subclass="2" protocol="0" />
+    <usb-device class="239" subclass="2" protocol="1" />
+</resources>

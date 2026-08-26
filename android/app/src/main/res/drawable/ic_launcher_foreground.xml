@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Baseball -->
+    <path
+        android:fillColor="#F7F7F2"
+        android:pathData="M54,30 m-20,0 a20,20 0 1,0 40,0 a20,20 0 1,0 -40,0" />
+    <path
+        android:strokeColor="#C8102E"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M41,18 C48,24 48,36 41,42" />
+    <path
+        android:strokeColor="#C8102E"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:pathData="M67,18 C60,24 60,36 67,42" />
+    <!-- Open palm -->
+    <path
+        android:fillColor="#8DC63F"
+        android:pathData="M42,86 L42,66 C42,63 47,63 47,66 L47,58 C47,55 52,55 52,58 L52,56 C52,53 57,53 57,56 L57,60 C57,57 62,57 62,60 L62,78 C62,86 56,90 50,90 C46,90 42,89 42,86 Z" />
+</vector>

@@ -69,21 +69,25 @@ export function evaluateCatch(ball: BallState, cursor: CursorSample, options: Ca
   return { caught: true, distance, threshold, reason: 'catch', inWindow };
 }
 
+/** Focal length of the reference display the catch radius was authored on (1080p). */
+export const REFERENCE_FOCAL = 1080 * 1.05;
+
 /**
  * Responsive catch radius.
  *
- * The configured value is authored for a 1080p-tall display; on a 4K wall or a
- * laptop it is scaled so the challenge is identical in *visual* terms. When the
- * camera reports a real palm size we blend towards it, so a player standing
- * closer gets a proportionally bigger glove instead of a mismatched hitbox.
+ * Scaled by the scene's focal length rather than by raw pixel height, so the glove
+ * keeps the same size *relative to the ball* on a laptop, a 4K wall and a portrait
+ * totem — the three cases where a height-based scale visibly breaks. When the camera
+ * reports a real palm size we blend towards it, so a player standing closer gets a
+ * proportionally bigger glove instead of a mismatched hitbox.
  */
 export function resolveCatchRadius(
   baseRadiusPx: number,
-  screenHeight: number,
+  focal: number,
   difficultyScale: number,
   measuredPalmRadiusPx?: number,
 ): number {
-  const scaled = baseRadiusPx * (screenHeight / 1080) * difficultyScale;
+  const scaled = baseRadiusPx * (focal / REFERENCE_FOCAL) * difficultyScale;
   if (!measuredPalmRadiusPx || measuredPalmRadiusPx <= 0) return scaled;
   return scaled * 0.65 + measuredPalmRadiusPx * 1.15 * 0.35;
 }

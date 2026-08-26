@@ -109,12 +109,28 @@ export function createView(width: number, height: number): View {
     width,
     height,
     // Slightly long lens: compresses the field and makes the ball read big.
-    focal: height * 1.05,
+    // Capped against the width so a portrait totem does not end up over-zoomed.
+    focal: Math.min(height * 1.05, width * 0.95),
     cx: width / 2,
     // Horizon sits above centre so more field is visible.
     cy: height * 0.44,
     eyeHeight: 1.55,
   };
+}
+
+/**
+ * Aspect-aware lateral spread.
+ *
+ * Pitch targets are authored for a 16:9 wall. On a narrow (portrait) display the
+ * same lateral offsets would put the ball past the edge of the screen at the catch
+ * plane, so the spread is scaled down to keep every pitch reachable and fair.
+ */
+export function lateralSpreadFor(view: View): number {
+  return clamp(view.width / (view.focal * 1.7), 0.45, 1);
+}
+
+function clamp(v: number, min: number, max: number): number {
+  return v < min ? min : v > max ? max : v;
 }
 
 export interface Projected {
