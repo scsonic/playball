@@ -16,3 +16,6 @@ node_modules
 
 *.local
 .vite
+
+# build output
+dist

@@ -2,7 +2,10 @@
 export default {
   content: [
     "./index.html",
-    "./src/**/*.{js,ts,jsx,tsx}",
+    "./gemini/index.html",
+    "./gemini/src/**/*.{js,ts,jsx,tsx}",
+    "./claude/index.html",
+    "./claude/src/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
