@@ -15,6 +15,25 @@ android {
         versionName = "1.0"
     }
 
+    /**
+     * A checked-in debug keystore.
+     *
+     * Android's auto-generated debug key is created per machine — and freshly on every
+     * CI run — so builds from different places refuse to install over one another
+     * ("signatures do not match"). A kiosk in the field must be able to take
+     * `adb install -r` from any build, so the key is fixed and committed. It is a debug
+     * key with the well-known password: not a secret, and not for store distribution.
+     * A production rollout should sign with its own release keystore.
+     */
+    signingConfigs {
+        getByName("debug") {
+            storeFile = rootProject.file("keystore/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false

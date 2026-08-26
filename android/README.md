@@ -76,8 +76,21 @@ than producing an APK that opens a blank screen.
 Requires JDK 17 and Android SDK 35. `android/local.properties` must point at your SDK
 (`sdk.dir=/path/to/Android/sdk`); Android Studio writes it for you.
 
-Artifact: `android/app/build/outputs/apk/debug/app-debug.apk` (~3.4 MB, includes both
-game editions).
+Artifact: `android/app/build/outputs/apk/debug/app-debug.apk` (~11 MB: both game editions
+plus the libuvc native libraries).
+
+**Prebuilt APK:** every push to `main` builds one in CI and attaches it to the rolling
+[`latest` release](https://github.com/scsonic/playball/releases/tag/latest).
+
+### Signing
+
+The debug build is signed with a **checked-in debug keystore**
+(`android/keystore/debug.keystore`, password `android`). Android's auto-generated debug key
+differs per machine and is recreated on every CI run, so builds from different places refuse
+to install over one another ("signatures do not match") — unacceptable for a kiosk that has
+to accept `adb install -r` from any build. This key is a debug key with the well-known
+password: not a secret, and not for store distribution. Sign a production rollout with your
+own release keystore.
 
 ## Configuration
 

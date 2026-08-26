@@ -54,11 +54,23 @@ public/assets/          shared, swappable brand / product / athlete / audio asse
 vite.config.ts          multi-page build for the three entry points
 ```
 
+## Downloads
+
+- **Play in a browser:** https://scsonic.github.io/playball/
+- **Android kiosk APK:** the rolling [`latest` release](https://github.com/scsonic/playball/releases/tag/latest),
+  rebuilt on every push to `main` (`adb install -r <file>.apk`).
+
 ## Deployment
 
-`.github/workflows/deploy.yml` builds the repository on every push to `main` and
-publishes `dist/` to GitHub Pages, so the landing page and both editions deploy together.
-Paths are relative (`base: './'`), so the same build works from a project subpath.
+`.github/workflows/deploy.yml` runs on every push to `main`:
+
+1. unit tests, then builds all three pages;
+2. publishes `dist/` to the `gh-pages` branch this repository serves Pages from, so the
+   landing page and both editions deploy together;
+3. builds the Android kiosk APK and refreshes the rolling `latest` prerelease with it.
+
+Paths are relative (`base: './'`), so the same build works from a project subpath. Pushing a
+`v*` tag additionally creates a permanent release with the same APK.
 
 ## Licensing note
 
