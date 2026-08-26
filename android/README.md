@@ -66,9 +66,12 @@ through the bridge into a canvas.
 npm install
 npm run android:build      # builds the web game, syncs it into assets, assembles the APK
 npm run android:install    # …and installs it on the connected device
-
-# or, in Android Studio: open the `android/` folder
 ```
+
+Working in Android Studio? Open the `android/` folder — every build syncs `dist/` into
+the APK assets automatically. You still need `npm run build` at the repository root once,
+so that `dist/` exists; the build stops with an explicit message if it does not, rather
+than producing an APK that opens a blank screen.
 
 Requires JDK 17 and Android SDK 35. `android/local.properties` must point at your SDK
 (`sdk.dir=/path/to/Android/sdk`); Android Studio writes it for you.

@@ -60,13 +60,44 @@ dependencies {
 /**
  * Copies the built web game into the APK assets.
  *
- * Run `npm run build` in the repository root first; this task then mirrors
- * `dist/` into `assets/web/`. Kept as a plain copy so the Android build never
- * depends on Node being installed on the build machine.
+ * Runs automatically before every build, so building from Android Studio picks up
+ * the latest `dist/` without anyone having to remember a second command. It is a
+ * plain copy, so the Android build never requires Node on the build machine — but
+ * it does require that someone has run `npm run build` at least once, and says so
+ * loudly when that has not happened.
  */
-tasks.register<Copy>("syncWebBuild") {
+val webAssetsDir = layout.projectDirectory.dir("src/main/assets/web")
+
+val syncWebBuild by tasks.registering(Copy::class) {
     val distDir = rootProject.file("../dist")
     from(distDir)
-    into(layout.projectDirectory.dir("src/main/assets/web"))
+    into(webAssetsDir)
     onlyIf { distDir.exists() }
+
+    doLast {
+        if (!distDir.exists()) {
+            logger.warn(
+                "\n[catch-challenge] ../dist not found — the APK will ship without the game.\n" +
+                    "                  Run `npm run build` in the repository root (or `npm run android:build`).\n",
+            )
+        }
+    }
+}
+
+/** Fail early and clearly rather than shipping an APK that opens a blank screen. */
+val checkWebAssets by tasks.registering {
+    dependsOn(syncWebBuild)
+    val index = webAssetsDir.file("claude/index.html").asFile
+    doLast {
+        if (!index.exists()) {
+            throw GradleException(
+                "Web assets are missing (${index.path}).\n" +
+                    "Run `npm run build` in the repository root first, or use `npm run android:build`.",
+            )
+        }
+    }
+}
+
+tasks.named("preBuild") {
+    dependsOn(checkWebAssets)
 }
