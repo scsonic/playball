@@ -113,7 +113,20 @@ Pushed frames are decoded into a canvas that is fed straight to MediaPipe and ex
 `MediaStream` for preview surfaces, so nothing downstream can tell a host camera from a
 webcam. `Camera.start()` prefers a registered host and calls its `requestPermission()`,
 which is what raises Android's USB permission dialog from the game's own Enable Camera
-button. If no frames arrive within 9 seconds it falls back to `getUserMedia`. See
+button.
+
+Two transports, chosen by where the game is running:
+
+| Context | Camera path |
+|---|---|
+| Browser (signage PC, laptop, phone) | `getUserMedia` — no host is registered, nothing changes |
+| Android shell | the host's USB (UVC) frames, **exclusively** |
+
+A host may declare `exclusive: true` (the Android shell does). Then a host failure is
+reported as a camera error the operator can retry, instead of quietly falling back to
+whatever camera the WebView happens to expose — which would run the activation on the
+wrong device. Hosts report failures with `fail(reason)` so the game reacts immediately
+rather than waiting out its 9-second timeout. See
 [`android/README.md`](../android/README.md) for the reference implementation.
 
 ## Privacy

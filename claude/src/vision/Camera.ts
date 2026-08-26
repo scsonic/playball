@@ -7,6 +7,8 @@ export type CameraErrorCode =
   | 'in_use'
   | 'insecure_context'
   | 'host_timeout'
+  | 'host_denied'
+  | 'host_no_device'
   | 'unknown';
 
 export type CameraTransport = 'webcam' | 'host';
@@ -55,24 +57,33 @@ export class Camera {
     if (externalCamera.hasHost()) {
       const result = await this.startHost(hostTimeoutMs);
       if (result.ok) return result;
-      // Host failed (denied, unplugged, no device): fall through to the webcam.
+      // An exclusive host (the Android USB shell) owns the camera: never quietly
+      // open some other device the WebView happens to expose — report the failure
+      // so the operator sees it and can retry the USB permission.
+      if (externalCamera.isExclusive()) return result;
     }
     return this.startWebcam(width, height);
   }
 
   private async startHost(timeoutMs: number): Promise<CameraStartResult> {
+    const requestedAt = Date.now();
     if (!externalCamera.isActive()) {
       // Triggers the host's own permission flow — on Android, the system
       // "Allow this app to access the USB device?" dialog.
       externalCamera.requestHostPermission();
     }
 
-    const deadline = Date.now() + timeoutMs;
+    const deadline = requestedAt + timeoutMs;
     while (Date.now() < deadline) {
       if (externalCamera.isActive()) {
         this.transport = 'host';
         this.startHostWatchdog();
         return { ok: true, transport: 'host' };
+      }
+      // The host can tell us it failed, so we do not sit out the whole timeout.
+      const failure = externalCamera.getFailureSince(requestedAt);
+      if (failure) {
+        return { ok: false, code: mapHostFailure(failure), message: `Host camera: ${failure}` };
       }
       await delay(120);
     }
@@ -233,6 +244,12 @@ export class Camera {
     this.video = null;
     this.onLostCallback = null;
   }
+}
+
+function mapHostFailure(reason: string): CameraErrorCode {
+  if (reason.includes('permission') || reason.includes('denied') || reason.includes('cancel')) return 'host_denied';
+  if (reason.includes('no_camera') || reason.includes('unplug') || reason.includes('detach')) return 'host_no_device';
+  return 'host_timeout';
 }
 
 function delay(ms: number): Promise<void> {

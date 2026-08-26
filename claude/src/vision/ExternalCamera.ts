@@ -35,6 +35,15 @@ export interface HostRegistration {
   requestPermission?: () => void;
   /** Asks the host to reopen the camera after a failure or unplug. */
   restart?: () => void;
+  /**
+   * When true the page must never silently fall back to `getUserMedia`.
+   *
+   * The Android shell sets this: it owns the USB camera through libuvc, and the
+   * WebView's own camera list is either empty or some unrelated built-in sensor.
+   * Falling back there would quietly run the activation on the wrong camera, so a
+   * host failure is surfaced as a camera error the operator can act on instead.
+   */
+  exclusive?: boolean;
 }
 
 type Listener = () => void;
@@ -55,6 +64,8 @@ class ExternalCamera {
   private lastFrameAt = 0;
   private droppedFrames = 0;
   private closeReason: string | null = null;
+  private closedAt = 0;
+  private requestedAt = 0;
   private listeners = new Set<Listener>();
 
   // ------------------------------------------------------------ host-facing API
@@ -68,6 +79,11 @@ class ExternalCamera {
     return this.host !== null;
   }
 
+  /** True when the host forbids falling back to the browser's own camera. */
+  isExclusive(): boolean {
+    return this.host?.exclusive === true;
+  }
+
   getHostName(): string | null {
     return this.host?.name ?? null;
   }
@@ -75,6 +91,8 @@ class ExternalCamera {
   /** Asks the native host to show its permission dialog / open the device. */
   requestHostPermission(): boolean {
     if (!this.host?.requestPermission) return false;
+    this.closeReason = null;
+    this.requestedAt = Date.now();
     try {
       this.host.requestPermission();
       return true;
@@ -82,6 +100,16 @@ class ExternalCamera {
       console.warn('[external-camera] host permission request failed', err);
       return false;
     }
+  }
+
+  /**
+   * A failure the host reported *after* we asked it to open — no device, permission
+   * refused, unplugged mid-open. Lets the app fail fast instead of sitting out the
+   * whole timeout.
+   */
+  getFailureSince(timestamp: number): string | null {
+    if (!this.closeReason || this.closedAt < timestamp) return null;
+    return this.closeReason;
   }
 
   restartHost(): boolean {
@@ -132,6 +160,7 @@ class ExternalCamera {
   close(reason = 'closed') {
     this.opened = false;
     this.closeReason = reason;
+    this.closedAt = Date.now();
     this.stream?.getVideoTracks().forEach((track) => {
       if (track.readyState === 'live') track.stop();
     });
@@ -191,6 +220,7 @@ class ExternalCamera {
       dropped: this.droppedFrames,
       msSinceFrame: this.lastFrameAt ? Date.now() - this.lastFrameAt : null,
       closeReason: this.closeReason,
+      exclusive: this.isExclusive(),
     };
   }
 
@@ -276,6 +306,8 @@ export function installHostApi() {
     version: 1,
     camera: {
       registerHost: (host: HostRegistration) => externalCamera.registerHost(host),
+      /** Hosts report a failure (no device, permission refused) through close(). */
+      fail: (reason: string) => externalCamera.close(reason),
       open: (info: HostCameraInfo) => externalCamera.open(info),
       pushFrame: (data: string) => externalCamera.pushFrame(data),
       close: (reason?: string) => externalCamera.close(reason),

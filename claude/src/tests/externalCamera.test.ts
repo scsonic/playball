@@ -80,3 +80,33 @@ describe('host camera API surface', () => {
     externalCamera.reset();
   });
 });
+
+describe('exclusive hosts', () => {
+  it('marks a host exclusive so the page will not fall back to getUserMedia', async () => {
+    const { externalCamera } = await import('../vision/ExternalCamera');
+    externalCamera.reset();
+
+    externalCamera.registerHost({ name: 'browser-host' });
+    expect(externalCamera.isExclusive()).toBe(false);
+
+    externalCamera.registerHost({ name: 'android-usb-camera', exclusive: true });
+    expect(externalCamera.isExclusive()).toBe(true);
+    expect(externalCamera.status().exclusive).toBe(true);
+
+    externalCamera.reset();
+  });
+
+  it('reports a failure raised after the open request, and ignores older ones', async () => {
+    const { externalCamera } = await import('../vision/ExternalCamera');
+    externalCamera.reset();
+
+    externalCamera.close('stale_failure_from_last_session');
+    const requestedAt = Date.now() + 5; // a request that happens after that close
+    expect(externalCamera.getFailureSince(requestedAt)).toBeNull();
+
+    externalCamera.close('no_camera');
+    expect(externalCamera.getFailureSince(requestedAt - 10)).toBe('no_camera');
+
+    externalCamera.reset();
+  });
+});

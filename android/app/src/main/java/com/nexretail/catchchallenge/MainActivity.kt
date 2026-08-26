@@ -305,17 +305,31 @@ class MainActivity : AppCompatActivity(), FrameSink, WebCameraBridge.Host {
     }
 
     override fun onCameraState(state: CameraState, detail: String) {
+        // Terminal failures are reported to the page as well, so the game shows its own
+        // recoverable camera screen immediately instead of waiting out its timeout.
+        when (state) {
+            CameraState.NO_CAMERA -> failPage("no_camera")
+            CameraState.NO_PERMISSION -> failPage("permission_denied")
+            CameraState.ERROR -> failPage("camera_error")
+            else -> Unit
+        }
+
         runOnUiThread {
             when (state) {
                 CameraState.STREAMING -> setStatus(detail)
                 CameraState.WAITING_PERMISSION -> setStatus("Waiting for USB permission — tap Allow")
-                CameraState.NO_CAMERA -> setStatus("No camera found — plug in a USB camera")
-                CameraState.NO_PERMISSION -> setStatus("USB permission denied — touch controls still work")
+                CameraState.NO_CAMERA -> setStatus("No USB camera found — plug one in, then retry")
+                CameraState.NO_PERMISSION -> setStatus("USB permission denied — retry to show the dialog again")
                 CameraState.DISCONNECTED -> setStatus("USB camera disconnected")
                 CameraState.ERROR -> setStatus("Camera error: $detail")
                 else -> Unit
             }
         }
+    }
+
+    private fun failPage(reason: String) {
+        streaming = false
+        callPage("window.CatchChallenge.camera.fail('$reason')")
     }
 
     // --------------------------------------------------- WebCameraBridge.Host

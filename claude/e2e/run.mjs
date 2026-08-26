@@ -133,6 +133,10 @@ async function main() {
     });
 
     await test('dwell-to-click fires exactly one selection after 2s', async () => {
+      // Easy difficulty for the game that follows: the bot chases the ball by polling
+      // the engine, which lags a frame or two. That lag is a property of the harness,
+      // not the game, and Easy removes it as a source of flakes.
+      await page.evaluate(() => window.__catchChallenge.dispatch({ type: 'SET_DIFFICULTY', difficulty: 'easy' }));
       await page.evaluate(() => window.__catchChallenge.store.patchConfig({ dwellClickDurationMs: 600 }));
       const box = await page.locator('#start-game').boundingBox();
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

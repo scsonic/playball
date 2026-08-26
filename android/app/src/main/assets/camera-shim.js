@@ -51,6 +51,10 @@
 
     api.registerHost({
       name: 'android-usb-camera',
+      // This shell owns the camera through libuvc. The WebView's own camera list is
+      // either empty or an unrelated built-in sensor, so the page must not fall back
+      // to getUserMedia behind our back.
+      exclusive: true,
       requestPermission: function () {
         // Shows the system "Allow access to the USB device?" dialog when needed.
         try { bridge.requestPermission(); } catch (e) { bridge.log('requestPermission failed: ' + e); }

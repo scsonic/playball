@@ -39,8 +39,12 @@ window.CatchChallenge.camera.isActive()
 window.CatchChallenge.camera.status()
 ```
 
-A host camera outranks `getUserMedia`, because a host only registers when it has a camera
-the page cannot reach by itself. The page decodes frames into a canvas, feeds that canvas
+The app registers as an **exclusive** host, so the page never falls back to `getUserMedia`
+behind its back. That matters in practice: on the test device the WebView could open *some*
+built-in sensor, which silently bypassed the USB camera entirely. With `exclusive: true` a
+UVC failure surfaces as the game's own camera-error screen (`HOST_NO_DEVICE`,
+`HOST_DENIED`) with a Retry that re-raises the USB dialog. In a plain browser no host
+registers at all, and the web build keeps using `getUserMedia` exactly as before. The page decodes frames into a canvas, feeds that canvas
 straight to MediaPipe, and exposes the same canvas as a `MediaStream` for its preview
 surfaces — so calibration, the operator panel and the game itself cannot tell the
 difference between a USB camera and a webcam.
@@ -126,9 +130,14 @@ auto-hides after six seconds so it can never sit on top of the player-facing UI.
   signage device at 1920×1080 — the bundled game loaded over the https asset origin, the
   shim installed, touch control worked and a full five-pitch game played through. That
   device had **no camera attached**, so it exercised the "no camera found" path.
-- **Not yet run on hardware**: the UVC capture path itself (permission dialog → frames), as
-  no device with a USB camera has been connected. Everything downstream of `pushFrame` is
-  covered by the browser tests above.
+- **On the device, with the current build**: the page registers the native host
+  (`WebCameraBridge: page registered the native camera host`), the game's Enable Camera
+  button reaches `requestPermission()`, and with no USB camera attached the app reports
+  `no_camera` to the page, which shows its recoverable error screen with
+  `ERROR: HOST_NO_DEVICE` — i.e. the whole native ⇄ page contract works both ways.
+- **Not yet run on hardware**: the last leg only — permission dialog → actual UVC frames —
+  because no USB camera has been connected to the device yet. Everything on either side of
+  it is verified.
 
 ## Troubleshooting
 
