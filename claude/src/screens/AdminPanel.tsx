@@ -8,6 +8,7 @@ import { ticker } from '../core/ticker';
 import type { Difficulty, GameStateLike } from './adminTypes';
 import { camera } from '../vision/Camera';
 import { externalCamera } from '../vision/ExternalCamera';
+import { handTracker } from '../vision/HandTracker';
 import { pointerSource } from '../vision/PointerSource';
 
 interface AdminPanelProps {
@@ -122,7 +123,7 @@ export function AdminPanel({
           <Row k="pitch type" v={debug.pitchType ?? '—'} />
           <Row k="flight" v={debug.flightProgress.toFixed(2)} />
           <Row k="fps" v={String(snapshot.fps)} />
-          <Row k="inference" v={`${diag.inferenceMs.toFixed(1)} ms`} />
+          <Row k="inference" v={`${diag.inferenceMs.toFixed(1)} ms (${handTracker.getDelegate()})`} />
           <Row k="particles" v={String(debug.particles)} />
         </Section>
 

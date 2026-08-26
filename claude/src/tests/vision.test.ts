@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { anatomicalHand, classifyPalm, palmCenter, palmWidth } from '../vision/PalmModel';
 import { Mapper } from '../vision/Mapper';
 import { Smoother } from '../vision/Smoother';
+import { isPointerAlive } from '../vision/PointerSource';
 import type { Landmark } from '../types';
 
 /**
@@ -161,5 +162,31 @@ describe('cursor smoothing', () => {
     const slowStep = slow.update(20, 0, 16.67); // 1200 px/s
     const fastStep = fast.update(400, 0, 16.67); // 24000 px/s
     expect(fastStep.x / 400).toBeGreaterThan(slowStep.x / 20);
+  });
+});
+
+describe('pointer liveness', () => {
+  it('keeps a mouse alive while no camera is competing with it', () => {
+    expect(
+      isPointerAlive({ kind: 'mouse', touchDown: false, msSincePointer: 60_000, cameraEnabled: false }),
+    ).toBe(true);
+  });
+
+  it('lets hand tracking win over a stale mouse position', () => {
+    expect(isPointerAlive({ kind: 'mouse', touchDown: false, msSincePointer: 9000, cameraEnabled: true })).toBe(false);
+    expect(isPointerAlive({ kind: 'mouse', touchDown: false, msSincePointer: 1200, cameraEnabled: true })).toBe(true);
+  });
+
+  it('drops the cursor the moment a finger lifts', () => {
+    expect(isPointerAlive({ kind: 'touch', touchDown: true, msSincePointer: 0, cameraEnabled: false })).toBe(true);
+    // Otherwise the cursor stays parked where the player tapped and the dwell
+    // engine auto-activates whatever the next screen puts under that spot.
+    expect(isPointerAlive({ kind: 'touch', touchDown: false, msSincePointer: 10, cameraEnabled: false })).toBe(false);
+  });
+
+  it('treats a pointer that never appeared as absent', () => {
+    expect(
+      isPointerAlive({ kind: 'mouse', touchDown: false, msSincePointer: Infinity, cameraEnabled: true }),
+    ).toBe(false);
   });
 });

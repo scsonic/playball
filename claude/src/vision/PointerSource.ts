@@ -52,6 +52,8 @@ export class PointerSource {
   private lastHandSeenAt = -Infinity;
   private lastPointerAt = -Infinity;
   private pointer = { x: 0, y: 0, down: false };
+  private pointerKind: 'mouse' | 'touch' = 'mouse';
+  private touchDown = false;
   private keyVector = { x: 0, y: 0 };
   private lumaCanvas: HTMLCanvasElement | null = null;
   private lumaAccumulator = 0;
@@ -62,6 +64,13 @@ export class PointerSource {
     if (typeof window === 'undefined' || this.detached.length) return;
 
     const onPointerMove = (e: PointerEvent | MouseEvent) => {
+      const kind = (e as PointerEvent).pointerType;
+      if (kind === 'touch' || kind === 'pen') {
+        this.pointerKind = 'touch';
+        this.touchDown = true;
+      } else if (kind === 'mouse' || kind === undefined) {
+        this.pointerKind = 'mouse';
+      }
       this.pointer.x = e.clientX;
       this.pointer.y = e.clientY;
       this.lastPointerAt = performance.now();
@@ -69,9 +78,17 @@ export class PointerSource {
     const onTouch = (e: TouchEvent) => {
       const t = e.touches[0];
       if (!t) return;
+      this.pointerKind = 'touch';
+      this.touchDown = true;
       this.pointer.x = t.clientX;
       this.pointer.y = t.clientY;
       this.lastPointerAt = performance.now();
+    };
+    const onTouchEnd = () => {
+      // A lifted finger is gone. Without this the cursor stays parked where the
+      // player last tapped and the dwell engine keeps "hovering" there, happily
+      // auto-activating whatever the next screen puts under that spot.
+      this.touchDown = false;
     };
     const onKeyDown = (e: KeyboardEvent) => {
       const step = e.shiftKey ? 3 : 1;
@@ -90,6 +107,9 @@ export class PointerSource {
     window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('touchmove', onTouch, { passive: true });
     window.addEventListener('touchstart', onTouch, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    window.addEventListener('pointerup', onTouchEnd, { passive: true });
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
 
@@ -97,6 +117,9 @@ export class PointerSource {
       () => window.removeEventListener('pointermove', onPointerMove),
       () => window.removeEventListener('touchmove', onTouch),
       () => window.removeEventListener('touchstart', onTouch),
+      () => window.removeEventListener('touchend', onTouchEnd),
+      () => window.removeEventListener('touchcancel', onTouchEnd),
+      () => window.removeEventListener('pointerup', onTouchEnd),
       () => window.removeEventListener('keydown', onKeyDown),
       () => window.removeEventListener('keyup', onKeyUp),
     ];
@@ -192,8 +215,13 @@ export class PointerSource {
 
     // --- fallback: mouse / touch / keyboard --------------------------------
     const handRecentlySeen = now - this.lastHandSeenAt < 900;
-    const pointerRecent = now - this.lastPointerAt < 4000;
     const keyboardActive = this.keyVector.x !== 0 || this.keyVector.y !== 0;
+    const pointerRecent = isPointerAlive({
+      kind: this.pointerKind,
+      touchDown: this.touchDown,
+      msSincePointer: now - this.lastPointerAt,
+      cameraEnabled: this.cameraEnabled,
+    });
 
     if (keyboardActive) {
       const speed = 900 * dt;
@@ -202,7 +230,7 @@ export class PointerSource {
       this.lastPointerAt = now;
     }
 
-    const usePointer = !this.cameraEnabled || (!handRecentlySeen && (pointerRecent || !camera.isLive()));
+    const usePointer = pointerRecent && (!this.cameraEnabled || !handRecentlySeen || !camera.isLive());
 
     if (usePointer) {
       const s = this.smoother.update(this.pointer.x, this.pointer.y, now);
@@ -269,6 +297,26 @@ export class PointerSource {
     this.smoother.reset();
     this.lumaCanvas = null;
   }
+}
+
+export interface PointerLiveness {
+  kind: 'mouse' | 'touch';
+  touchDown: boolean;
+  msSincePointer: number;
+  cameraEnabled: boolean;
+}
+
+/**
+ * Is the non-camera pointer still "there"?
+ *
+ * A mouse stays where it was left, so it keeps driving the cursor — but only for a
+ * few seconds while a camera is available, so a stale mouse position cannot fight
+ * with hand tracking. A finger, in contrast, ceases to exist the moment it lifts.
+ */
+export function isPointerAlive({ kind, touchDown, msSincePointer, cameraEnabled }: PointerLiveness): boolean {
+  if (kind === 'touch') return touchDown;
+  if (!Number.isFinite(msSincePointer)) return false;
+  return cameraEnabled ? msSincePointer < 4000 : true;
 }
 
 function clamp(v: number, min: number, max: number) {

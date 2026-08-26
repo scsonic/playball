@@ -20,6 +20,28 @@
   var TARGET_FPS = 24;
   var registered = false;
 
+  // Mirror the page console into logcat. A kiosk in the field has no DevTools, and
+  // `WebChromeClient.onConsoleMessage` is unreliable on some vendor WebView builds.
+  ['log', 'info', 'warn', 'error'].forEach(function (level) {
+    var original = console[level];
+    console[level] = function () {
+      try {
+        bridge.log('[' + level + '] ' + Array.prototype.map.call(arguments, function (a) {
+          if (a instanceof Error) return a.name + ': ' + a.message;
+          if (typeof a === 'object') { try { return JSON.stringify(a); } catch (e) { return String(a); } }
+          return String(a);
+        }).join(' '));
+      } catch (e) { /* never let logging break the page */ }
+      if (original) original.apply(console, arguments);
+    };
+  });
+  window.addEventListener('error', function (e) {
+    try { bridge.log('[uncaught] ' + (e.message || '') + ' @' + (e.filename || '') + ':' + (e.lineno || 0)); } catch (err) {}
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    try { bridge.log('[unhandled-rejection] ' + String(e.reason)); } catch (err) {}
+  });
+
   // ---------------------------------------------------------------- push mode
 
   function tryRegisterHost() {

@@ -29,8 +29,20 @@ export interface AssetSlot {
   description: string;
 }
 
-const BASE = import.meta.env.BASE_URL ?? '/';
-const p = (path: string) => `${BASE.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
+/**
+ * Public assets live at the deployment root (`/assets/**`), while this edition is
+ * served from a sub-folder (`/claude/`). Resolving against the page would look for
+ * `/claude/assets/...` and 404 — which is exactly what happened inside the Android
+ * WebView, where the site sits at `/assets/web/claude/`. So paths are resolved
+ * against the parent of the page's own directory, which works for the dev server,
+ * a GitHub Pages project sub-path and the APK's asset origin alike.
+ */
+const DEPLOY_ROOT =
+  typeof document !== 'undefined'
+    ? new URL('../', new URL(import.meta.env.BASE_URL ?? './', document.baseURI)).href
+    : '/';
+
+const p = (path: string) => `${DEPLOY_ROOT.replace(/\/$/, '')}/${path.replace(/^\//, '')}`;
 
 export const ASSET_SLOTS: Record<string, AssetSlot> = {
   brandLogo: {

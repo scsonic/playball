@@ -63,6 +63,7 @@ export class HandTracker {
   private lastPose: PoseFrame = EMPTY_POSE;
   private poseAccumulator = 0;
   private inputMirrored = false;
+  private delegate: 'GPU' | 'CPU' = 'GPU';
 
   constructor(
     private targetHand: HandMode = 'left',
@@ -81,6 +82,11 @@ export class HandTracker {
     return !!this.hands;
   }
 
+  /** Which MediaPipe delegate ended up being used — surfaced in the operator panel. */
+  getDelegate(): 'GPU' | 'CPU' {
+    return this.delegate;
+  }
+
   async load(): Promise<boolean> {
     if (this.hands) return true;
     if (this.loading) return this.loading;
@@ -88,20 +94,35 @@ export class HandTracker {
     this.loading = (async () => {
       try {
         const fileset = await FilesetResolver.forVisionTasks(WASM_ROOT);
-        this.hands = await HandLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: HAND_MODEL, delegate: 'GPU' },
-          runningMode: 'VIDEO',
-          numHands: 2,
-          minHandDetectionConfidence: 0.45,
-          minHandPresenceConfidence: 0.45,
-          minTrackingConfidence: 0.45,
-        });
+
+        // GPU first, CPU second. Signage boxes and cheap tablets frequently ship a
+        // WebView whose GL stack cannot host the delegate; without this fallback the
+        // whole experience silently drops to mouse mode on exactly that hardware.
+        for (const delegate of ['GPU', 'CPU'] as const) {
+          try {
+            this.hands = await HandLandmarker.createFromOptions(fileset, {
+              baseOptions: { modelAssetPath: HAND_MODEL, delegate },
+              runningMode: 'VIDEO',
+              numHands: 2,
+              minHandDetectionConfidence: 0.45,
+              minHandPresenceConfidence: 0.45,
+              minTrackingConfidence: 0.45,
+            });
+            this.delegate = delegate;
+            console.info(`[vision] hand landmarker ready on ${delegate}`);
+            break;
+          } catch (err) {
+            console.warn(`[vision] ${delegate} delegate unavailable`, err);
+            this.hands = null;
+          }
+        }
+        if (!this.hands) return false;
 
         if (this.usePose) {
           // Pose failure must never block hand tracking.
           try {
             this.pose = await PoseLandmarker.createFromOptions(fileset, {
-              baseOptions: { modelAssetPath: POSE_MODEL, delegate: 'GPU' },
+              baseOptions: { modelAssetPath: POSE_MODEL, delegate: this.delegate },
               runningMode: 'VIDEO',
               numPoses: 1,
               minPoseDetectionConfidence: 0.5,

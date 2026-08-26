@@ -229,7 +229,9 @@ class MainActivity : AppCompatActivity(), FrameSink, WebCameraBridge.Host {
             }
 
             override fun onConsoleMessage(message: ConsoleMessage): Boolean {
-                Log.d(TAG, "web: ${message.message()} @${message.lineNumber()}")
+                // INFO, not DEBUG: on locked-down signage builds debug logs are dropped,
+                // and the page's console is the only window into a kiosk in the field.
+                Log.i(TAG, "web[${message.messageLevel()}]: ${message.message()} @${message.lineNumber()}")
                 return true
             }
         }
