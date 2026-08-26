@@ -8,18 +8,52 @@ alone cannot on Android signage hardware:
 1. **A secure origin.** The bundled game is served from
    `https://appassets.androidplatform.net` via `WebViewAssetLoader`. `getUserMedia` and the
    MediaPipe WASM runtime both refuse to run from `file://`.
-2. **A USB camera the WebView can actually use.** Many Android builds never offer an
-   external camera to `getUserMedia`, even when the platform can see it. The app captures
-   natively with Camera2 and injects the feed as an ordinary `MediaStream`.
+2. **A USB camera the WebView can actually use.** Most Android builds never offer an
+   external camera to `getUserMedia`, and many camera HALs do not expose one to Camera2
+   either. The app opens the device over **libuvc** (`com.herohan:UVCAndroid`), which needs
+   the user to approve that specific USB device once — the familiar
+   *"Allow the app to access the USB device?"* dialog.
 
 ```
-USB camera → Camera2 (LENS_FACING_EXTERNAL) → YUV_420_888 → NV21 → JPEG
-          → JS bridge (pull) → <canvas> → canvas.captureStream()
-          → navigator.mediaDevices.getUserMedia()  ← the game calls this, unchanged
+USB camera → libuvc (UVCAndroid) → NV21 → JPEG → base64
+          → webView.evaluateJavascript(...)
+          → window.CatchChallenge.camera.pushFrame(frame)   ← the game's own API
+          → <canvas> → MediaPipe hand tracking
 ```
 
 Frames exist only in memory. Nothing is written to storage and nothing is uploaded —
 the same privacy promise the web game makes on screen.
+
+## The page's camera API
+
+The web game publishes a documented contract that any native shell can drive
+(`claude/src/vision/ExternalCamera.ts`), so the host never has to monkey-patch
+`getUserMedia`:
+
+```js
+window.CatchChallenge.camera.registerHost({ name, requestPermission, restart })
+window.CatchChallenge.camera.open({ width, height, label, transport })
+window.CatchChallenge.camera.pushFrame(base64Jpeg)   // per frame
+window.CatchChallenge.camera.close('unplugged')
+window.CatchChallenge.camera.isActive()
+window.CatchChallenge.camera.status()
+```
+
+A host camera outranks `getUserMedia`, because a host only registers when it has a camera
+the page cannot reach by itself. The page decodes frames into a canvas, feeds that canvas
+straight to MediaPipe, and exposes the same canvas as a `MediaStream` for its preview
+surfaces — so calibration, the operator panel and the game itself cannot tell the
+difference between a USB camera and a webcam.
+
+**The permission dialog is triggered by the game's own button.** When the player selects
+「カメラを有効にする」, `Camera.start()` sees a registered host and calls
+`requestPermission()`, which reaches `CameraCoordinator.requestPermission()` and finally
+`ICameraHelper.selectDevice(device)` — the call that raises the Android USB dialog. The
+game then waits (up to 9 s) for the first pushed frame before continuing to calibration.
+
+Pages that do **not** implement this API — the Gemini edition, for instance — are still
+supported: the injected shim falls back to patching `getUserMedia` and *pulling* frames
+through the bridge into a canvas.
 
 ## Build and install
 
@@ -55,21 +89,23 @@ game editions).
 
 ## How the camera path works
 
-- `UsbCameraSource` enumerates Camera2 devices and prefers `LENS_FACING_EXTERNAL` (the USB
-  camera), falling back to the front camera. It converts each frame to JPEG, honouring row
-  and pixel strides — UVC cameras routinely return padded buffers, and ignoring the strides
-  is what produces the classic green-skewed image.
-- `WebCameraBridge` exposes the newest frame to JavaScript. The page **pulls** frames rather
-  than native pushing them, which gives natural back-pressure: while MediaPipe is busy the
-  page simply asks later and native drops the frames in between.
-- `assets/camera-shim.js` is injected before any page script
-  (`WebViewCompat.addDocumentStartJavaScript`, with an `onPageStarted` fallback). It decodes
-  frames into a canvas, wraps it with `captureStream()`, and patches `getUserMedia` and
-  `enumerateDevices`. If the native camera is not streaming it delegates to the real
-  `getUserMedia`, so devices that *do* expose USB cameras to the WebView keep working.
-- Unplugging is handled end to end: Camera2 reports `onDisconnected`, the shim's watchdog
-  ends the injected track, and the game shows its own recoverable camera-error screen.
-  Re-plugging restarts capture automatically (`USB_DEVICE_ATTACHED`).
+- `UvcCameraSource` (primary) uses `com.herohan:UVCAndroid` 1.0.13:
+  `CameraHelper()` → `selectDevice()` (permission dialog) → `onDeviceOpen` → `openCamera()`
+  → `onCameraOpen` → `setPreviewSize()` + `setFrameCallback(cb, PIXEL_FORMAT_NV21)` +
+  `startPreview()`. libuvc wants a preview target, so an off-screen `SurfaceTexture` keeps
+  the pipeline alive without putting a second camera view on the kiosk screen.
+- `Camera2CameraSource` (fallback) uses the platform API, preferring
+  `LENS_FACING_EXTERNAL` and falling back to the front camera, so the kiosk still works on
+  devices that do expose UVC to Camera2 and during development on hardware with a built-in
+  camera.
+- `CameraCoordinator` picks between them, re-evaluates when USB devices come and go, and is
+  the single entry point for start / requestPermission / restart.
+- Frames are JPEG-encoded off the main thread and dropped rather than queued when encoding
+  falls behind: the newest frame is the only one worth having, and an unbounded queue would
+  grow whenever inference briefly stalls. The page applies the same rule when decoding.
+- Unplugging is handled end to end: `onDetach` → `camera.close('unplugged')` in the page →
+  the game's own recoverable camera-error screen. Re-plugging restarts capture
+  automatically (`USB_DEVICE_ATTACHED`).
 
 ## Kiosk behaviour
 
@@ -80,18 +116,26 @@ auto-hides after six seconds so it can never sit on top of the player-facing UI.
 
 ## Verified
 
-- Built with AGP 8.9 / Gradle 8.11.1 / Kotlin 2.0.21 against SDK 35.
-- Installed and run on an Android 13 (API 33) signage device at 1920×1080: the bundled game
-  loads over the https asset origin, the shim installs, touch control works, and a full
-  five-pitch game plays through. That device has **no camera attached**, so it exercised the
-  "no camera found" path — the USB capture path itself still needs a run with a UVC camera
-  connected.
+- **Web side, in a real browser**: the end-to-end suite registers a fake host, pushes
+  synthetic JPEG frames and asserts the game accepts them — `transport === 'host'`, the feed
+  reports live, and the app proceeds past the camera screen with no webcam present
+  (`npm run e2e`, 19/19).
+- **Android build**: AGP 8.9 / Gradle 8.11.1 / Kotlin 2.0.21, SDK 35, UVCAndroid 1.0.13
+  packaged with its native libraries (arm64-v8a, armeabi-v7a, x86, x86_64).
+- **On hardware**: an earlier build of this app was installed and run on an Android 13
+  signage device at 1920×1080 — the bundled game loaded over the https asset origin, the
+  shim installed, touch control worked and a full five-pitch game played through. That
+  device had **no camera attached**, so it exercised the "no camera found" path.
+- **Not yet run on hardware**: the UVC capture path itself (permission dialog → frames), as
+  no device with a USB camera has been connected. Everything downstream of `pushFrame` is
+  covered by the browser tests above.
 
 ## Troubleshooting
 
 | Symptom | Check |
 |---|---|
-| "No camera found" with a camera plugged in | `adb shell dumpsys media.camera \| grep -i external` — if the device's HAL does not expose external cameras, Camera2 cannot reach it and a UVC/libusb library would be required |
+| "No camera found" with a camera plugged in | Check `adb logcat -s UvcCameraSource CameraCoordinator`. If the device never appears, confirm the OS reports it: `adb shell lsusb` or `dumpsys usb`. `Config.PREFER_UVC = false` forces the Camera2 path |
+| Permission dialog never appears | It is raised by the game's "Enable camera" button. Watch for `WAITING_PERMISSION` in logcat; `onCancel` means the user (or a kiosk policy) dismissed it |
 | Black or green frames | Usually a stride bug in a custom build of the YUV conversion; the shipped conversion handles row/pixel strides |
 | Game loads but tracking never starts | Check `adb logcat -s WebGame` for "USB camera shim installed", then `window.__androidUsbCamera.status()` in `chrome://inspect` |
 | Nothing loads | Run `npm run android:sync` — the APK ships the web build from `app/src/main/assets/web/`, which is generated, not committed |

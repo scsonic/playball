@@ -7,6 +7,7 @@ import { store } from '../core/store';
 import { ticker } from '../core/ticker';
 import type { Difficulty, GameStateLike } from './adminTypes';
 import { camera } from '../vision/Camera';
+import { externalCamera } from '../vision/ExternalCamera';
 import { pointerSource } from '../vision/PointerSource';
 
 interface AdminPanelProps {
@@ -55,10 +56,10 @@ export function AdminPanel({
 
   useEffect(() => {
     if (!open) return;
-    const source = camera.getVideo();
     const el = videoRef.current;
-    if (source && el) {
-      el.srcObject = source.srcObject;
+    const stream = camera.getPreviewStream();
+    if (stream && el) {
+      el.srcObject = stream;
       el.play().catch(() => undefined);
     }
 
@@ -150,6 +151,14 @@ export function AdminPanel({
           {Object.entries(assets).map(([id, ok]) => (
             <Row key={id} k={id} v={ok ? '✓ file' : '· procedural'} />
           ))}
+        </Section>
+
+        <Section title="Camera">
+          <Row k="transport" v={camera.getTransport()} />
+          <Row k="device" v={camera.getLabel()} />
+          <Row k="resolution" v={`${camera.getResolution().width}x${camera.getResolution().height}`} />
+          <Row k="host" v={externalCamera.status().host ?? 'none'} />
+          <Row k="host frames" v={`${externalCamera.status().frames} (${externalCamera.status().dropped} dropped)`} />
         </Section>
 
         <Section title="Campaign">

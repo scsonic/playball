@@ -199,6 +199,96 @@ async function main() {
       await page.evaluate(() => window.__catchChallenge.store.patchConfig({ inactivityResetSeconds: 30 }));
     });
 
+    console.log('\nHost camera API (the Android USB-camera path)');
+    await test('exposes window.CatchChallenge.camera to a native host', async () => {
+      const api = await page.evaluate(() => {
+        const cc = window.CatchChallenge;
+        return {
+          version: cc && cc.version,
+          methods: cc && cc.camera ? Object.keys(cc.camera).sort() : [],
+        };
+      });
+      assert(api.version === 1, 'host API version missing');
+      assert(
+        ['close', 'isActive', 'open', 'pushFrame', 'registerHost', 'status'].every((m) =>
+          api.methods.includes(m),
+        ),
+        `unexpected host API surface: ${api.methods.join(',')}`,
+      );
+    });
+
+    await test('accepts pushed frames and reports a live host camera', async () => {
+      const status = await page.evaluate(async () => {
+        // Stand in for the Android app: register, announce, push JPEG frames.
+        let permissionAsked = 0;
+        window.CatchChallenge.camera.registerHost({
+          name: 'e2e-usb-host',
+          requestPermission: () => { permissionAsked++; },
+        });
+        window.CatchChallenge.camera.open({ width: 320, height: 240, label: 'E2E UVC', transport: 'uvc' });
+
+        const c = document.createElement('canvas');
+        c.width = 320;
+        c.height = 240;
+        const ctx = c.getContext('2d');
+        for (let i = 0; i < 6; i++) {
+          ctx.fillStyle = i % 2 ? '#3366aa' : '#aa6633';
+          ctx.fillRect(0, 0, 320, 240);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(20 + i * 10, 40, 60, 60);
+          const base64 = c.toDataURL('image/jpeg', 0.7).split(',')[1];
+          window.CatchChallenge.camera.pushFrame(base64);
+          await new Promise((r) => setTimeout(r, 90));
+        }
+        await new Promise((r) => setTimeout(r, 200));
+        return { ...window.CatchChallenge.camera.status(), permissionAsked };
+      });
+
+      assert(status.host === 'e2e-usb-host', 'host not registered');
+      assert(status.active === true, `host camera not active: ${JSON.stringify(status)}`);
+      assert(status.frames > 0, 'no frames decoded');
+      assert(status.width === 320 && status.height === 240, 'frame size not adopted');
+    });
+
+    await test('a host camera drives the game instead of getUserMedia', async () => {
+      // The page has no webcam here, so reaching calibration proves the frames
+      // came from the host path.
+      await page.evaluate(() => window.__catchChallenge.dispatch({ type: 'RESET', reason: 'manual' }));
+      await page.waitForTimeout(600);
+      await page.evaluate(() => {
+        const hook = window.__catchChallenge;
+        hook.store.patchConfig({ inactivityResetSeconds: 600 });
+        hook.dispatch({ type: 'RETRY_CAMERA' });
+      });
+      await waitForApp(page, (s) => s.app === 'CAMERA_PERMISSION');
+
+      // Keep the host feed alive while the app starts the camera.
+      const pump = page.evaluate(async () => {
+        const c = document.createElement('canvas');
+        c.width = 320;
+        c.height = 240;
+        const ctx = c.getContext('2d');
+        for (let i = 0; i < 60; i++) {
+          ctx.fillStyle = i % 2 ? '#224466' : '#446622';
+          ctx.fillRect(0, 0, 320, 240);
+          window.CatchChallenge.camera.pushFrame(c.toDataURL('image/jpeg', 0.6).split(',')[1]);
+          await new Promise((r) => setTimeout(r, 80));
+        }
+      });
+
+      await page.click('#enable-camera');
+      const state = await waitForApp(
+        page,
+        (s) => s.app === 'CAMERA_CALIBRATION' || s.app === 'ATTRACT_MODE' || s.app === 'CAMERA_ERROR',
+        25_000,
+      );
+      const transport = await page.evaluate(() => window.__catchChallenge.camera.getTransport());
+      await pump;
+
+      assert(transport === 'host', `expected the host transport, got ${transport}`);
+      assert(state.app !== 'CAMERA_ERROR', 'host camera was not accepted');
+    });
+
     console.log('\nLayout');
     for (const [label, viewport] of [
       ['1920×1080 landscape', { width: 1920, height: 1080 }],

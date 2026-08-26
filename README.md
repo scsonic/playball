@@ -16,7 +16,8 @@ twice, independently, and this repository serves both from one landing page.
 | Vision | MediaPipe Hand Landmarker | MediaPipe Hand + Pose Landmarker |
 | Input model | hand tracking with mouse fallback | one unified pointer stream (hand / mouse / touch / keyboard) |
 | Rendering | 2.5D canvas | pinhole-camera projection in metres, single rAF ticker |
-| Tests | 12 unit tests | 72 unit tests + 16 Playwright e2e tests |
+| Native host camera | — | `window.CatchChallenge.camera` (used by the Android USB build) |
+| Tests | 12 unit tests | 79 unit tests + 19 Playwright e2e tests |
 
 Both editions run entirely in the browser. Camera frames are processed on-device and
 are never stored or uploaded.
@@ -48,7 +49,7 @@ Webcam access requires a secure context: use `localhost` or HTTPS.
 index.html              edition select landing page
 gemini/                 Gemini edition (index.html + src/)
 claude/                 Claude edition (index.html + src/ + e2e/)
-android/                Android kiosk wrapper (WebView + USB camera bridge)
+android/                Android kiosk wrapper (WebView + libuvc USB camera)
 public/assets/          shared, swappable brand / product / athlete / audio assets
 vite.config.ts          multi-page build for the three entry points
 ```

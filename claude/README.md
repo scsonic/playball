@@ -23,8 +23,8 @@ including dwell selection, works identically.
 ```bash
 npm run build          # type-check + production build into dist/
 npm run preview        # serve the build
-npm test               # 72 unit tests
-npm run e2e            # 16 end-to-end tests (Playwright + your installed Chrome)
+npm test               # 79 unit tests
+npm run e2e            # 19 end-to-end tests (Playwright + your installed Chrome)
 ```
 
 ## How to play
@@ -53,7 +53,8 @@ src/
   core/      stateMachine.ts   table-driven FSM: every transition is declared
              store.ts          external store; React subscribes, tracking never re-renders
              ticker.ts         the single requestAnimationFrame loop
-  vision/    Camera.ts         getUserMedia lifecycle + loss detection
+  vision/    Camera.ts         camera lifecycle + loss detection (webcam or host)
+             ExternalCamera.ts window.CatchChallenge.camera — native host contract
              HandTracker.ts    MediaPipe hand + optional pose, lazy-loaded
              PalmModel.ts      palm centre / width / orientation, open-palm classifier
              Mapper.ts         camera → screen mapping (mirror, active area, clamp)
@@ -91,6 +92,29 @@ expiry, locale, feature flags and licensing flags. Difficulty presets (`easy` / 
 `challenge`) adjust pitch speed, catch radius, catch window and trajectory spread.
 
 Environment variables are documented in [`.env.example`](../.env.example).
+
+## Native host camera (`window.CatchChallenge.camera`)
+
+Some shells can reach a camera the browser cannot — a USB/UVC device on Android is the
+usual case, where the WebView's `getUserMedia` never sees external cameras. Instead of
+having the host patch `getUserMedia`, the game publishes a contract and treats a host
+camera as a first-class transport:
+
+```js
+window.CatchChallenge.camera.registerHost({ name, requestPermission, restart })
+window.CatchChallenge.camera.open({ width, height, label, transport })
+window.CatchChallenge.camera.pushFrame(base64Jpeg)   // per frame
+window.CatchChallenge.camera.close('unplugged')
+window.CatchChallenge.camera.isActive()
+window.CatchChallenge.camera.status()
+```
+
+Pushed frames are decoded into a canvas that is fed straight to MediaPipe and exposed as a
+`MediaStream` for preview surfaces, so nothing downstream can tell a host camera from a
+webcam. `Camera.start()` prefers a registered host and calls its `requestPermission()`,
+which is what raises Android's USB permission dialog from the game's own Enable Camera
+button. If no frames arrive within 9 seconds it falls back to `getUserMedia`. See
+[`android/README.md`](../android/README.md) for the reference implementation.
 
 ## Privacy
 
@@ -172,14 +196,17 @@ game runs silently and unlocks on the first selection.
 
 ## Testing
 
-- **Unit (Vitest, 72 tests):** state transitions, win condition, pitch counting, duplicate
+- **Unit (Vitest, 79 tests):** state transitions, win condition, pitch counting, duplicate
   catch prevention, catch collision, responsive catch radius, trajectory geometry and
   sequencing, dwell timing/reset/velocity/cooldown, palm classifier, handedness mirroring,
-  coordinate mapping, smoothing, demo coupon rules, coupon-after-loss refusal.
-- **End-to-end (Playwright, 16 tests):** camera-denied fallback, mouse demo mode, dwell
+  coordinate mapping, smoothing, demo coupon rules, coupon-after-loss refusal, and the
+  host camera contract.
+- **End-to-end (Playwright, 19 tests):** camera-denied fallback, mouse demo mode, dwell
   activation, a full five-pitch game **won by actually catching the ball**, coupon + QR
   display, replay without reload, no coupon after a loss, inactivity auto-reset, language
-  switching and layout at 1920×1080, 3840×2160 and 1080×1920.
+  switching, layout at 1920×1080, 3840×2160 and 1080×1920, plus the host camera path:
+  a fake native host registers, pushes synthetic JPEG frames, and the game runs on them
+  with no webcam present.
 
 The e2e suite drives the real UI against a production build using the Chrome already
 installed on the machine (`playwright-core`), so no browser download is needed.

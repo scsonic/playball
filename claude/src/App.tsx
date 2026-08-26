@@ -21,6 +21,7 @@ import { GameHud } from './screens/GameHud';
 import { ResultScreen } from './screens/ResultScreen';
 import type { Coupon, Difficulty, HandMode, Locale, TrackingDiagnostics } from './types';
 import { camera } from './vision/Camera';
+import { externalCamera } from './vision/ExternalCamera';
 import { handTracker } from './vision/HandTracker';
 import { pointerSource } from './vision/PointerSource';
 
@@ -65,6 +66,8 @@ export function App() {
       pointer: pointerSource,
       dwell: dwellEngine,
       ticker,
+      camera,
+      externalCamera,
     };
     pointerSource.attachDom();
     pointerSource.applyConfig(store.getConfig());
@@ -359,6 +362,7 @@ export function App() {
       return;
     }
     analytics.track('camera_permission_granted');
+    console.info(`[camera] transport=${result.transport} device=${camera.getLabel()}`);
     const loaded = await handTracker.load();
     pointerSource.setCameraEnabled(loaded);
     setBusy(false);

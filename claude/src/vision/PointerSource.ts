@@ -1,6 +1,6 @@
 import type { CampaignConfig } from '../config/campaign.config';
 import type { CursorSample, InputSource, TrackingDiagnostics } from '../types';
-import { camera } from './Camera';
+import { camera, type FrameSource } from './Camera';
 import { handTracker } from './HandTracker';
 import { Mapper } from './Mapper';
 import { Smoother } from './Smoother';
@@ -136,14 +136,14 @@ export class PointerSource {
   update(dt: number, now: number): CursorSample {
     const screen = this.mapper.getScreen();
 
-    if (this.cameraEnabled && camera.isLive()) {
-      const video = camera.getVideo()!;
-      const { hand, pose } = handTracker.detect(video, now, dt);
+    const source = this.cameraEnabled ? camera.getSource() : null;
+    if (source && camera.isLive()) {
+      const { hand, pose } = handTracker.detect(source, camera.getFrameId(), now, dt);
 
       this.lumaAccumulator += dt;
       if (this.lumaAccumulator > 1) {
         this.lumaAccumulator = 0;
-        this.diagnostics.lighting = this.sampleLighting(video);
+        this.diagnostics.lighting = this.sampleLighting(source);
       }
 
       this.diagnostics = {
@@ -241,7 +241,7 @@ export class PointerSource {
   }
 
   /** Cheap local luminance probe used only for the calibration hint. */
-  private sampleLighting(video: HTMLVideoElement): TrackingDiagnostics['lighting'] {
+  private sampleLighting(source: FrameSource): TrackingDiagnostics['lighting'] {
     try {
       if (!this.lumaCanvas) {
         this.lumaCanvas = document.createElement('canvas');
@@ -250,7 +250,7 @@ export class PointerSource {
       }
       const ctx = this.lumaCanvas.getContext('2d', { willReadFrequently: true });
       if (!ctx) return 'fair';
-      ctx.drawImage(video, 0, 0, 32, 18);
+      ctx.drawImage(source, 0, 0, 32, 18);
       const { data } = ctx.getImageData(0, 0, 32, 18);
       let sum = 0;
       for (let i = 0; i < data.length; i += 4) {

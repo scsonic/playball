@@ -35,6 +35,15 @@ object Config {
     /** JPEG quality for the bridge frames. 55–70 is the sweet spot for tracking. */
     const val JPEG_QUALITY = 62
 
+    /**
+     * Prefer libuvc (com.herohan:UVCAndroid) for USB cameras.
+     *
+     * This is the reliable path: it works even when the device's camera HAL never
+     * exposes external cameras, at the cost of one system permission dialog for the
+     * USB device. Set to false to force the Camera2 path.
+     */
+    const val PREFER_UVC = true
+
     /** Prefer an external (USB) camera over the built-in ones. */
     const val PREFER_EXTERNAL_CAMERA = true
 

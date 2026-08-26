@@ -7,54 +7,73 @@ import org.json.JSONObject
 /**
  * The JavaScript ⇄ native bridge.
  *
- * The page *pulls* frames instead of native pushing them. Pulling gives the web side
- * natural back-pressure: if the browser is busy running MediaPipe, it simply asks for
- * the next frame later, and native drops the ones in between rather than queueing
- * work nobody will use.
+ * The web game publishes `window.CatchChallenge.camera` (see
+ * `claude/src/vision/ExternalCamera.ts`); the injected shim registers this app as its
+ * camera host and calls back through here. Two directions:
+ *
+ *  - **page → native**: `onHostReady`, `requestPermission`, `restart`
+ *  - **native → page**: frames pushed with `evaluateJavascript`, handled by [Host]
+ *
+ * `grabFrame` remains for pages that do *not* implement the host API (the Gemini
+ * edition), where the shim falls back to patching `getUserMedia` and pulling frames.
  */
-class WebCameraBridge(private val source: UsbCameraSource) {
+class WebCameraBridge(private val host: Host) {
 
-    /** Frame id the page has already received, so we never send the same JPEG twice. */
+    interface Host {
+        /** The page implements the host API and has registered this app. */
+        fun onHostReady()
+
+        /** The page asked for the camera — show the USB permission dialog if needed. */
+        fun onPermissionRequested()
+
+        fun onRestartRequested()
+
+        /** Legacy pull mode: newest frame as base64, or "" when nothing is new. */
+        fun takeFrame(sinceId: Long): Pair<Long, String>?
+
+        fun statusJson(): JSONObject
+    }
+
     @Volatile
     private var lastDeliveredId: Long = -1
 
     @JavascriptInterface
-    fun isReady(): Boolean = source.state == UsbCameraSource.State.STREAMING
-
-    @JavascriptInterface
-    fun isExternal(): Boolean = source.isExternal
-
-    @JavascriptInterface
-    fun getLabel(): String = source.cameraLabel.ifEmpty { "USB camera" }
-
-    @JavascriptInterface
-    fun getWidth(): Int = source.frameWidth
-
-    @JavascriptInterface
-    fun getHeight(): Int = source.frameHeight
-
-    /** Newest JPEG as base64, or "" when there is nothing new since the last call. */
-    @JavascriptInterface
-    fun grabFrame(): String {
-        val frame = source.takeFrameBase64(lastDeliveredId) ?: return ""
-        lastDeliveredId = frame.first
-        return frame.second
+    fun onHostReady() {
+        Log.i(TAG, "page registered the native camera host")
+        host.onHostReady()
     }
 
     @JavascriptInterface
-    fun getStatus(): String = JSONObject()
-        .put("state", source.state.name)
-        .put("label", source.cameraLabel)
-        .put("external", source.isExternal)
-        .put("width", source.frameWidth)
-        .put("height", source.frameHeight)
-        .put("frames", source.frameCounter())
-        .toString()
+    fun requestPermission() {
+        host.onPermissionRequested()
+    }
 
-    /** Lets the page ask for a re-open, e.g. after the operator re-seats the cable. */
     @JavascriptInterface
     fun restart() {
-        source.start()
+        host.onRestartRequested()
+    }
+
+    @JavascriptInterface
+    fun getStatus(): String = host.statusJson().toString()
+
+    @JavascriptInterface
+    fun isReady(): Boolean = host.statusJson().optBoolean("streaming", false)
+
+    @JavascriptInterface
+    fun getLabel(): String = host.statusJson().optString("label", "USB camera")
+
+    @JavascriptInterface
+    fun getWidth(): Int = host.statusJson().optInt("width", 0)
+
+    @JavascriptInterface
+    fun getHeight(): Int = host.statusJson().optInt("height", 0)
+
+    /** Legacy pull mode. Returns "" when there is nothing new since the last call. */
+    @JavascriptInterface
+    fun grabFrame(): String {
+        val frame = host.takeFrame(lastDeliveredId) ?: return ""
+        lastDeliveredId = frame.first
+        return frame.second
     }
 
     @JavascriptInterface
@@ -63,6 +82,8 @@ class WebCameraBridge(private val source: UsbCameraSource) {
     }
 
     companion object {
+        private const val TAG = "WebCameraBridge"
+
         /** Name the shim looks for on `window`. */
         const val NAME = "AndroidUsbCamera"
     }

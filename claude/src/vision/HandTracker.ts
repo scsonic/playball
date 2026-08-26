@@ -1,5 +1,6 @@
 import { FilesetResolver, HandLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision';
 import type { HandMode, Landmark } from '../types';
+import type { FrameSource } from './Camera';
 import { anatomicalHand, classifyPalm, type PalmReading } from './PalmModel';
 
 const WASM_ROOT = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm';
@@ -57,7 +58,7 @@ export class HandTracker {
   private hands: HandLandmarker | null = null;
   private pose: PoseLandmarker | null = null;
   private loading: Promise<boolean> | null = null;
-  private lastVideoTime = -1;
+  private lastFrameId = -1;
   private lastHand: HandFrame = EMPTY_HAND;
   private lastPose: PoseFrame = EMPTY_POSE;
   private poseAccumulator = 0;
@@ -123,20 +124,26 @@ export class HandTracker {
     return this.loading;
   }
 
-  /** Runs inference for one video frame. Returns cached results between frames. */
-  detect(video: HTMLVideoElement, now: number, dt: number): { hand: HandFrame; pose: PoseFrame } {
-    if (!this.hands || video.readyState < 2) {
+  /**
+   * Runs inference for one camera frame. Returns cached results between frames.
+   *
+   * The source may be a `<video>` (webcam) or a `<canvas>` (frames pushed in by a
+   * native host, e.g. a USB camera on Android) — MediaPipe accepts both, and
+   * `frameId` is what tells us a genuinely new frame has arrived.
+   */
+  detect(source: FrameSource, frameId: number, now: number, dt: number): { hand: HandFrame; pose: PoseFrame } {
+    if (!this.hands || !isFrameReady(source)) {
       return { hand: this.lastHand, pose: this.lastPose };
     }
-    if (video.currentTime === this.lastVideoTime) {
+    if (frameId === this.lastFrameId) {
       // No new camera frame yet — do not burn GPU on a duplicate inference.
       return { hand: this.lastHand, pose: this.lastPose };
     }
-    this.lastVideoTime = video.currentTime;
+    this.lastFrameId = frameId;
 
     const started = performance.now();
     try {
-      const result = this.hands.detectForVideo(video, now);
+      const result = this.hands.detectForVideo(source, now);
       this.lastHand = this.selectHand(result, performance.now() - started);
     } catch (err) {
       console.warn('[vision] hand inference error', err);
@@ -147,7 +154,7 @@ export class HandTracker {
     if (this.pose && this.poseAccumulator >= 0.2) {
       this.poseAccumulator = 0;
       try {
-        this.lastPose = readPose(this.pose.detectForVideo(video, now), this.targetHand, this.inputMirrored);
+        this.lastPose = readPose(this.pose.detectForVideo(source, now), this.targetHand, this.inputMirrored);
       } catch {
         this.lastPose = EMPTY_POSE;
       }
@@ -213,8 +220,14 @@ export class HandTracker {
     this.pose = null;
     this.lastHand = EMPTY_HAND;
     this.lastPose = EMPTY_POSE;
-    this.lastVideoTime = -1;
+    this.lastFrameId = -1;
   }
+}
+
+/** A canvas is always readable; a video needs decoded data first. */
+function isFrameReady(source: FrameSource): boolean {
+  if (source instanceof HTMLVideoElement) return source.readyState >= 2;
+  return source.width > 0 && source.height > 0;
 }
 
 function readPose(

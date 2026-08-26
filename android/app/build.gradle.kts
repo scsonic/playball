@@ -51,6 +51,10 @@ dependencies {
     // WebViewAssetLoader (secure https origin for the bundled site) and
     // addDocumentStartJavaScript (inject the camera shim before page scripts run).
     implementation("androidx.webkit:webkit:1.12.1")
+    // USB (UVC) camera over libuvc. This is what makes a USB camera work on devices
+    // whose Camera2 HAL never exposes external cameras — at the cost of one system
+    // permission dialog per device, which the game's own button triggers.
+    implementation("com.herohan:UVCAndroid:1.0.13")
 }
 
 /**

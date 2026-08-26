@@ -38,6 +38,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.webkit.WebViewAssetLoader
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.nexretail.catchchallenge.camera.CameraCoordinator
+import com.nexretail.catchchallenge.camera.CameraState
+import com.nexretail.catchchallenge.camera.FrameSink
+import org.json.JSONObject
 
 /**
  * Kiosk host for the Catch Challenge web game.
@@ -48,22 +52,37 @@ import androidx.webkit.WebViewFeature
  *
  * The web game is used unmodified — the same build that runs on the signage browser.
  */
-class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
+class MainActivity : AppCompatActivity(), FrameSink, WebCameraBridge.Host {
 
     private lateinit var webView: WebView
     private lateinit var statusView: TextView
-    private lateinit var cameraSource: UsbCameraSource
+    private lateinit var cameraCoordinator: CameraCoordinator
     private lateinit var bridge: WebCameraBridge
 
     private val main = Handler(Looper.getMainLooper())
     private var shimScript: String = ""
     private var pendingCameraPermission = false
 
+    /** True once the page has registered this app as its camera host (push mode). */
+    @Volatile
+    private var hostReady = false
+
+    // Camera status, mirrored here so the bridge can answer synchronously.
+    @Volatile private var cameraLabel = ""
+    @Volatile private var cameraWidth = 0
+    @Volatile private var cameraHeight = 0
+    @Volatile private var streaming = false
+    @Volatile private var framesSent = 0L
+
+    // Legacy pull-mode buffer, used only by pages without the host API.
+    @Volatile private var latestFrame: String? = null
+    @Volatile private var latestFrameId = 0L
+
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             pendingCameraPermission = false
             if (granted) {
-                cameraSource.start()
+                cameraCoordinator.start()
             } else {
                 // Not a dead end: the game itself offers a mouse/touch demo mode.
                 setStatus("Camera permission denied — touch controls still work")
@@ -76,13 +95,13 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
             when (intent.action) {
                 UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
                     Log.i(TAG, "USB device attached")
-                    // The camera HAL needs a moment to enumerate the new device.
-                    main.postDelayed({ cameraSource.start() }, 1200)
+                    // The USB stack needs a moment to enumerate the new device.
+                    main.postDelayed({ cameraCoordinator.onUsbTopologyChanged() }, 1200)
                 }
                 UsbManager.ACTION_USB_DEVICE_DETACHED -> {
                     Log.i(TAG, "USB device detached")
                     setStatus("USB camera unplugged")
-                    main.postDelayed({ cameraSource.start() }, 600)
+                    main.postDelayed({ cameraCoordinator.onUsbTopologyChanged() }, 800)
                 }
             }
         }
@@ -96,8 +115,8 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
 
         shimScript = assets.open("camera-shim.js").bufferedReader().use { it.readText() }
 
-        cameraSource = UsbCameraSource(this).also { it.listener = this }
-        bridge = WebCameraBridge(cameraSource)
+        cameraCoordinator = CameraCoordinator(this, this)
+        bridge = WebCameraBridge(this)
 
         setContentView(buildUi())
         configureWebView()
@@ -180,6 +199,8 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
             ): WebResourceResponse? = assetLoader.shouldInterceptRequest(request.url)
 
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                // A reload drops the page's registration; it re-registers via the shim.
+                hostReady = false
                 // Fallback for WebView builds without DOCUMENT_START_SCRIPT: still runs
                 // before the app bundle executes on virtually every page load.
                 if (!WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -236,7 +257,7 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
 
     private fun requestCameraIfNeeded() {
         if (hasCameraPermission()) {
-            cameraSource.start()
+            cameraCoordinator.start()
         } else if (!pendingCameraPermission) {
             pendingCameraPermission = true
             permissionLauncher.launch(Manifest.permission.CAMERA)
@@ -251,16 +272,100 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
         ContextCompat.registerReceiver(this, usbReceiver, filter, ContextCompat.RECEIVER_EXPORTED)
     }
 
-    override fun onCameraState(state: UsbCameraSource.State, detail: String) {
+    // ------------------------------------------------------------- FrameSink
+
+    override fun onCameraOpen(width: Int, height: Int, label: String, transport: String) {
+        cameraWidth = width
+        cameraHeight = height
+        cameraLabel = label
+        streaming = true
+        // Tell the page a camera is live, using its own documented API.
+        callPage(
+            "window.CatchChallenge.camera.open({width:$width,height:$height," +
+                "label:${label.toJsString()},transport:${transport.toJsString()}})",
+        )
+    }
+
+    override fun onFrame(jpegBase64: String) {
+        latestFrameId++
+        latestFrame = jpegBase64
+        if (!hostReady) return // page has no host API: it will pull instead
+        framesSent++
+        // Push straight into the page's camera API. evaluateJavascript must run on the
+        // UI thread, so frames hop from the encode thread to main here and nowhere else.
+        callPage("window.CatchChallenge.camera.pushFrame('$jpegBase64')")
+    }
+
+    override fun onCameraClose(reason: String) {
+        streaming = false
+        latestFrame = null
+        callPage("window.CatchChallenge.camera.close(${reason.toJsString()})")
+    }
+
+    override fun onCameraState(state: CameraState, detail: String) {
         runOnUiThread {
             when (state) {
-                UsbCameraSource.State.STREAMING -> setStatus(detail)
-                UsbCameraSource.State.NO_CAMERA -> setStatus("No camera found — plug in a USB camera")
-                UsbCameraSource.State.NO_PERMISSION -> setStatus("Camera permission required")
-                UsbCameraSource.State.DISCONNECTED -> setStatus("USB camera disconnected")
-                UsbCameraSource.State.ERROR -> setStatus("Camera error: $detail")
+                CameraState.STREAMING -> setStatus(detail)
+                CameraState.WAITING_PERMISSION -> setStatus("Waiting for USB permission — tap Allow")
+                CameraState.NO_CAMERA -> setStatus("No camera found — plug in a USB camera")
+                CameraState.NO_PERMISSION -> setStatus("USB permission denied — touch controls still work")
+                CameraState.DISCONNECTED -> setStatus("USB camera disconnected")
+                CameraState.ERROR -> setStatus("Camera error: $detail")
                 else -> Unit
             }
+        }
+    }
+
+    // --------------------------------------------------- WebCameraBridge.Host
+
+    override fun onHostReady() {
+        hostReady = true
+        // If a camera is already live, re-announce it: the page may have reloaded.
+        if (streaming) {
+            onCameraOpen(cameraWidth, cameraHeight, cameraLabel, cameraCoordinator.transport)
+        }
+    }
+
+    override fun onPermissionRequested() {
+        // Comes from the game's own "Enable camera" button, so the system USB dialog
+        // appears as a direct result of a player action.
+        runOnUiThread {
+            if (!hasCameraPermission()) {
+                requestCameraIfNeeded()
+            } else {
+                cameraCoordinator.requestPermission()
+            }
+        }
+    }
+
+    override fun onRestartRequested() {
+        runOnUiThread { cameraCoordinator.restart() }
+    }
+
+    override fun takeFrame(sinceId: Long): Pair<Long, String>? {
+        val id = latestFrameId
+        if (id == sinceId) return null
+        val frame = latestFrame ?: return null
+        return id to frame
+    }
+
+    override fun statusJson(): JSONObject = JSONObject()
+        .put("transport", cameraCoordinator.transport)
+        .put("state", cameraCoordinator.state().name)
+        .put("streaming", streaming)
+        .put("label", cameraLabel)
+        .put("width", cameraWidth)
+        .put("height", cameraHeight)
+        .put("hostReady", hostReady)
+        .put("framesSent", framesSent)
+
+    /** Runs a snippet in the page, guarding against a page that has no host API yet. */
+    private fun callPage(script: String) {
+        main.post {
+            webView.evaluateJavascript(
+                "try{if(window.CatchChallenge&&window.CatchChallenge.camera){$script}}catch(e){}",
+                null,
+            )
         }
     }
 
@@ -282,8 +387,8 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
     override fun onResume() {
         super.onResume()
         enterImmersiveMode()
-        if (hasCameraPermission() && cameraSource.state != UsbCameraSource.State.STREAMING) {
-            cameraSource.start()
+        if (hasCameraPermission() && !cameraCoordinator.isStreaming()) {
+            cameraCoordinator.start()
         }
         webView.onResume()
     }
@@ -299,8 +404,7 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
         } catch (e: IllegalArgumentException) {
             /* never registered */
         }
-        cameraSource.listener = null
-        cameraSource.stop()
+        cameraCoordinator.stop()
         main.removeCallbacksAndMessages(null)
         webView.loadUrl("about:blank")
         webView.destroy()
@@ -327,3 +431,8 @@ class MainActivity : AppCompatActivity(), UsbCameraSource.Listener {
         private const val TAG = "CatchChallenge"
     }
 }
+
+
+/** Quotes a string for embedding in a JavaScript snippet. */
+private fun String.toJsString(): String =
+    "'" + replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'"

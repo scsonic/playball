@@ -31,11 +31,12 @@ export function CalibrationScreen({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const source = camera.getVideo();
     const el = videoRef.current;
-    if (!source || !el) return;
-    // Re-use the existing MediaStream: no second getUserMedia prompt.
-    el.srcObject = source.srcObject;
+    // One stream for both transports: the webcam's own MediaStream, or a canvas
+    // capture of the frames a native host is pushing in. No second permission prompt.
+    const stream = camera.getPreviewStream();
+    if (!stream || !el) return;
+    el.srcObject = stream;
     el.play().catch(() => undefined);
     return () => {
       el.srcObject = null;
@@ -88,6 +89,7 @@ export function CalibrationScreen({
             label={`${dict.statusLighting}: ${diagnostics.lighting}`}
           />
           <Status on={diagnostics.distance === 'ok'} label={`${dict.statusDistance}: ${diagnostics.distance}`} />
+          <p className="eyebrow opacity-45">{camera.getLabel()}</p>
 
           <div className="mt-[1vmin] flex flex-wrap gap-[0.8vmin]">
             <DwellButton
