@@ -19,19 +19,22 @@ import { AdminDebugModal } from '../screens/AdminDebugModal';
 
 export const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameStoreState>(gameStateMachine.getState());
-  const [trackingFrame, setTrackingFrame] = useState<TrackingFrame>({
+  const initialFrame: TrackingFrame = {
     timestamp: performance.now(),
-    personDetected: false,
-    handDetected: false,
+    personDetected: true,
+    handDetected: true,
     isLeftHand: true,
-    palmOpen: false,
-    confidence: 0,
+    palmOpen: true,
+    confidence: 1.0,
     rawPalmCenter: { x: 0.5, y: 0.5 },
     smoothedPalmCenter: { x: 0.5, y: 0.5 },
     screenPos: { x: window.innerWidth * 0.5, y: window.innerHeight * 0.5 },
     velocity: 0,
     lightingQuality: 'good'
-  });
+  };
+
+  const [trackingFrame, setTrackingFrame] = useState<TrackingFrame>(initialFrame);
+  const trackingFrameRef = useRef<TrackingFrame>(initialFrame);
   const [dwellProgress, setDwellProgress] = useState<number>(0);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -53,18 +56,23 @@ export const App: React.FC = () => {
   // Main Tracking & Dwell Loop
   useEffect(() => {
     const loop = (time: number) => {
-      let currentFrame = trackingFrame;
+      let currentFrame: TrackingFrame;
 
-      // 1. Check Vision Source
-      if (gameState.mouseDemoMode) {
-        currentFrame = visionSimulator.getFrame(time);
-      } else {
-        const video = cameraManager.getVideoElement();
-        if (video && cameraManager.isReady()) {
-          currentFrame = handTracker.processVideoFrame(video, time);
+      const video = cameraManager.getVideoElement();
+      if (!gameState.mouseDemoMode && video && cameraManager.isReady()) {
+        const cameraFrame = handTracker.processVideoFrame(video, time);
+        if (cameraFrame.handDetected) {
+          currentFrame = cameraFrame;
+        } else {
+          // Fallback to mouse if hand not in frame
+          currentFrame = visionSimulator.getFrame(time);
         }
+      } else {
+        // Direct Mouse tracking
+        currentFrame = visionSimulator.getFrame(time);
       }
 
+      trackingFrameRef.current = currentFrame;
       setTrackingFrame(currentFrame);
 
       // 2. Update Dwell Selection
@@ -203,6 +211,7 @@ export const App: React.FC = () => {
       {gameState.currentState === 'PITCHING' && (
         <GameplayScreen
           gameState={gameState}
+          trackingFrameRef={trackingFrameRef}
           trackingFrame={trackingFrame}
           locale={gameState.locale}
           onResetGame={() => gameStateMachine.resetToAttract()}

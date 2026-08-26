@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, AlertCircle, Hand, User, Sun, ArrowRight, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Hand, User, Sun, ArrowRight, RefreshCw, MousePointer } from 'lucide-react';
 import { Locale, TrackingFrame } from '../types/game';
 import { LOCALES } from '../locales';
 import { DwellButton } from '../interaction/DwellButton';
@@ -161,15 +161,25 @@ export const CalibrationScreen: React.FC<CalibrationScreenProps> = ({
           </div>
         </div>
 
-        {/* Hand Toggle & Skip Calibration */}
+        {/* Hand Toggle & Proceed Buttons */}
         <div className="flex items-center space-x-3">
           <button
             onClick={onToggleTargetHand}
             className="px-4 py-2.5 bg-slate-800/90 border border-slate-600 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center space-x-2"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>{targetHand === 'left' ? 'Switch to Right Hand' : 'Switch to Left Hand'}</span>
+            <span>{targetHand === 'left' ? 'Right Hand' : 'Left Hand'}</span>
           </button>
+
+          <DwellButton
+            id="calib-mouse-btn"
+            onDwellTrigger={onCalibrationComplete}
+            variant="secondary"
+            className="text-xs py-3 px-4 flex items-center space-x-2"
+          >
+            <MousePointer className="w-4 h-4" />
+            <span>Play with Mouse</span>
+          </DwellButton>
 
           <DwellButton
             id="calib-proceed-btn"

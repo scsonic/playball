@@ -1,13 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import { Trophy, RefreshCw, Activity } from 'lucide-react';
 import { gameEngine } from '../game/GameEngine';
-import { gameStateMachine, GameStoreState } from '../state/gameStateMachine';
+import { visionSimulator } from '../vision/VisionSimulator';
+import { GameStoreState } from '../state/gameStateMachine';
 import { TrackingFrame, Locale } from '../types/game';
 import { LOCALES } from '../locales';
 import { DwellButton } from '../interaction/DwellButton';
 
 interface GameplayScreenProps {
   gameState: GameStoreState;
+  trackingFrameRef: React.MutableRefObject<TrackingFrame>;
   trackingFrame: TrackingFrame;
   locale: Locale;
   onResetGame: () => void;
@@ -15,6 +17,7 @@ interface GameplayScreenProps {
 
 export const GameplayScreen: React.FC<GameplayScreenProps> = ({
   gameState,
+  trackingFrameRef,
   trackingFrame,
   locale,
   onResetGame
@@ -29,9 +32,18 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
     gameEngine.setCanvas(canvas);
     gameEngine.startPitchSequence();
 
+    const handlePointer = (e: MouseEvent | PointerEvent) => {
+      visionSimulator.setSimulatedPosition(e.clientX, e.clientY, true);
+    };
+
+    window.addEventListener('mousemove', handlePointer, { passive: true });
+    window.addEventListener('pointermove', handlePointer, { passive: true });
+
     let animationId: number;
     const loop = (time: number) => {
-      gameEngine.updateAndRender(time, trackingFrame);
+      // Use live ref frame to ensure 60fps tracking without closure freeze
+      const frame = trackingFrameRef.current;
+      gameEngine.updateAndRender(time, frame);
       animationId = requestAnimationFrame(loop);
     };
     animationId = requestAnimationFrame(loop);
@@ -41,14 +53,16 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
 
     return () => {
       cancelAnimationFrame(animationId);
+      window.removeEventListener('mousemove', handlePointer);
+      window.removeEventListener('pointermove', handlePointer);
       window.removeEventListener('resize', handleResize);
     };
-  }, []);
+  }, [trackingFrameRef]);
 
   const { currentPitchIndex, totalPitches, catchesCount, requiredCatches } = gameState;
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none">
+    <div className="relative w-full h-full overflow-hidden select-none cursor-crosshair">
       {/* 2.5D Canvas View */}
       <canvas
         ref={canvasRef}
