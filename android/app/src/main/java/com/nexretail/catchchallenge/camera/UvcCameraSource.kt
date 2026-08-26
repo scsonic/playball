@@ -44,6 +44,8 @@ class UvcCameraSource(
 
     private var encodeThread: HandlerThread? = null
     private var encodeHandler: Handler? = null
+    private val mainHandler = Handler(android.os.Looper.getMainLooper())
+    private var openAttempts = 0
 
     @Volatile
     private var streaming = false
@@ -55,7 +57,19 @@ class UvcCameraSource(
     private var frameHeight = 0
 
     @Volatile
+    private var cameraLabel = "USB camera"
+
+    @Volatile
     private var encoding = false
+
+    @Volatile
+    private var framesEncoded = 0L
+
+    @Volatile
+    private var framesReceived = 0L
+
+    @Volatile
+    private var supportedSizes: List<Size> = emptyList()
 
     private var lastFrameAt = 0L
     private val frameIntervalMs = 1000L / Config.TARGET_FPS
@@ -69,7 +83,10 @@ class UvcCameraSource(
     }
 
     override fun start() {
-        if (helper != null) return
+        if (helper != null) {
+            Log.i(TAG, "start() ignored: helper already created")
+            return
+        }
         ensureEncodeThread()
 
         helper = CameraHelper().apply {
@@ -77,6 +94,14 @@ class UvcCameraSource(
         }
 
         val devices = helper?.deviceList.orEmpty()
+        Log.i(TAG, "UVC devices visible to the helper: ${devices.size}")
+        devices.forEach {
+            Log.i(
+                TAG,
+                "  ${it.deviceName} vid=${it.vendorId} pid=${it.productId} " +
+                    "class=${it.deviceClass} interfaces=${it.interfaceCount} video=${it.isVideoDevice()}",
+            )
+        }
         if (devices.isEmpty()) {
             sink.onCameraState(CameraState.NO_CAMERA, "no UVC device attached")
             return
@@ -90,6 +115,15 @@ class UvcCameraSource(
             start()
             return
         }
+        if (streaming) {
+            // Already live. Re-selecting the device here would tear down a working
+            // camera and reopen it — which is exactly what happens when the player
+            // presses "Enable camera" after the kiosk has already found the device.
+            Log.i(TAG, "requestPermission ignored: already streaming")
+            sink.onCameraOpen(frameWidth, frameHeight, cameraLabel, transport)
+            sink.onCameraState(CameraState.STREAMING, "$cameraLabel ${frameWidth}x$frameHeight")
+            return
+        }
         selectFirstDevice()
     }
 
@@ -100,16 +134,62 @@ class UvcCameraSource(
             return
         }
         device = target
+        Log.i(TAG, "selectDevice ${target.deviceName} (${target.productName})")
         sink.onCameraState(CameraState.WAITING_PERMISSION, "requesting access to ${target.productName ?: target.deviceName}")
         try {
             // Shows the system USB permission dialog when the device is not yet approved.
             helper?.selectDevice(target)
         } catch (e: Exception) {
+            Log.e(TAG, "selectDevice failed", e)
             sink.onCameraState(CameraState.ERROR, "selectDevice: ${e.message}")
         }
     }
 
+    /**
+     * Opens the camera, with retries.
+     *
+     * libuvc can answer BUSY when it claims the interface immediately after the USB
+     * device is opened — the service is still settling, or a previous handle has not
+     * been released yet. Backing off and retrying is far more reliable than opening
+     * once and giving up.
+     */
+    private fun openCameraSoon(delayMs: Long) {
+        mainHandler.removeCallbacks(openRetry)
+        mainHandler.postDelayed(openRetry, delayMs)
+    }
+
+    private val openRetry = Runnable {
+        val h = helper ?: return@Runnable
+        openAttempts++
+        try {
+            Log.i(TAG, "openCamera attempt $openAttempts")
+            h.openCamera()
+        } catch (e: Exception) {
+            Log.e(TAG, "openCamera threw", e)
+        }
+        // onCameraOpen clears this; if it never arrives, back off and try again.
+        if (openAttempts < MAX_OPEN_ATTEMPTS) {
+            mainHandler.postDelayed(openWatchdog, 1500)
+        } else {
+            sink.onCameraState(CameraState.ERROR, "could not open the USB camera after $openAttempts attempts")
+        }
+    }
+
+    private val openWatchdog = Runnable {
+        if (streaming) return@Runnable
+        Log.w(TAG, "no onCameraOpen after attempt $openAttempts — closing and retrying")
+        try {
+            helper?.closeCamera()
+        } catch (e: Exception) {
+            Log.w(TAG, "closeCamera before retry failed", e)
+        }
+        openCameraSoon(600)
+    }
+
     override fun stop() {
+        mainHandler.removeCallbacks(openRetry)
+        mainHandler.removeCallbacks(openWatchdog)
+        openAttempts = 0
         streaming = false
         try {
             helper?.setFrameCallback(null, 0)
@@ -141,40 +221,56 @@ class UvcCameraSource(
         }
 
         override fun onDeviceOpen(opened: UsbDevice, isFirstOpen: Boolean) {
-            Log.i(TAG, "onDeviceOpen firstOpen=$isFirstOpen")
+            Log.i(TAG, "onDeviceOpen ${opened.deviceName} firstOpen=$isFirstOpen")
             sink.onCameraState(CameraState.OPENING, "opening ${opened.productName ?: "USB camera"}")
-            try {
-                helper?.openCamera()
-            } catch (e: Exception) {
-                sink.onCameraState(CameraState.ERROR, "openCamera: ${e.message}")
-            }
+            openCameraSoon(0)
         }
 
         override fun onCameraOpen(opened: UsbDevice) {
+            Log.i(TAG, "onCameraOpen ${opened.deviceName}")
+            openAttempts = 0
+            mainHandler.removeCallbacks(openRetry)
             val h = helper ?: return
             try {
-                pickSize(h)?.let { h.previewSize = it }
+                val picked = pickSize(h)
+                picked?.let {
+                    try {
+                        h.previewSize = it
+                    } catch (e: Exception) {
+                        Log.w(TAG, "setPreviewSize failed, keeping the default", e)
+                    }
+                }
+
+                // Trust the size we asked for, not the read-back: `previewSize` still
+                // reports the previous value at this point on some builds, and a wrong
+                // frame size means every incoming buffer looks truncated and is dropped.
+                // `frameCallback` corrects it from the real buffer length anyway.
+                supportedSizes = runCatching { h.supportedSizeList }.getOrNull().orEmpty()
+                val size = picked ?: h.previewSize
+                frameWidth = size?.width ?: UVCCamera.DEFAULT_PREVIEW_WIDTH
+                frameHeight = size?.height ?: UVCCamera.DEFAULT_PREVIEW_HEIGHT
 
                 // libuvc wants a preview target; an off-screen SurfaceTexture keeps the
                 // pipeline alive without putting a second camera view on the kiosk screen.
-                val size = h.previewSize
-                frameWidth = size?.width ?: UVCCamera.DEFAULT_PREVIEW_WIDTH
-                frameHeight = size?.height ?: UVCCamera.DEFAULT_PREVIEW_HEIGHT
                 attachOffscreenSurface(h, frameWidth, frameHeight)
 
-                h.setFrameCallback(frameCallback, UVCCamera.PIXEL_FORMAT_NV21)
                 h.startPreview()
+                // Callback after startPreview: some builds drop a callback registered
+                // while the stream is still being negotiated.
+                h.setFrameCallback(frameCallback, UVCCamera.PIXEL_FORMAT_NV21)
 
                 streaming = true
-                val label = opened.productName ?: "USB camera"
-                sink.onCameraOpen(frameWidth, frameHeight, label, transport)
-                sink.onCameraState(CameraState.STREAMING, "$label ${frameWidth}x$frameHeight")
+                cameraLabel = opened.productName ?: "USB camera"
+                Log.i(TAG, "streaming ${frameWidth}x$frameHeight from $cameraLabel")
+                sink.onCameraOpen(frameWidth, frameHeight, cameraLabel, transport)
+                sink.onCameraState(CameraState.STREAMING, "$cameraLabel ${frameWidth}x$frameHeight")
             } catch (e: Exception) {
                 sink.onCameraState(CameraState.ERROR, "startPreview: ${e.message}")
             }
         }
 
         override fun onCameraClose(closed: UsbDevice) {
+            Log.i(TAG, "onCameraClose ${closed.deviceName}")
             streaming = false
             try {
                 helper?.setFrameCallback(null, 0)
@@ -185,6 +281,7 @@ class UvcCameraSource(
         }
 
         override fun onDeviceClose(closed: UsbDevice) {
+            Log.i(TAG, "onDeviceClose ${closed.deviceName}")
             streaming = false
         }
 
@@ -199,17 +296,27 @@ class UvcCameraSource(
 
         override fun onCancel(cancelled: UsbDevice) {
             // The user dismissed or denied the USB permission dialog.
+            Log.w(TAG, "onCancel ${cancelled.deviceName} — permission dialog dismissed")
             streaming = false
             sink.onCameraState(CameraState.NO_PERMISSION, "USB permission denied")
         }
 
         override fun onError(errored: UsbDevice, e: CameraException) {
+            Log.e(TAG, "onError ${errored.deviceName}: ${e.message}", e)
             streaming = false
             sink.onCameraState(CameraState.ERROR, e.message ?: "camera exception")
         }
     }
 
     private val frameCallback = IFrameCallback { buffer: ByteBuffer ->
+        framesReceived++
+        if (framesReceived <= 3L || framesReceived % 240L == 0L) {
+            Log.i(
+                TAG,
+                "frame callback #$framesReceived bytes=${buffer.remaining()} " +
+                    "expected=${frameWidth * frameHeight * 3 / 2} (${frameWidth}x$frameHeight)",
+            )
+        }
         if (!streaming) return@IFrameCallback
         val now = System.currentTimeMillis()
         if (now - lastFrameAt < frameIntervalMs) return@IFrameCallback
@@ -218,10 +325,31 @@ class UvcCameraSource(
         if (encoding) return@IFrameCallback
         lastFrameAt = now
 
-        val width = frameWidth
-        val height = frameHeight
-        val expected = width * height * 3 / 2
-        if (width <= 0 || height <= 0 || buffer.remaining() < expected) return@IFrameCallback
+        var width = frameWidth
+        var height = frameHeight
+        var expected = width * height * 3 / 2
+        if (width <= 0 || height <= 0) return@IFrameCallback
+
+        if (buffer.remaining() < expected) {
+            // The stream is not the size we think it is. Recover by matching the buffer
+            // length against the sizes this camera advertises, rather than dropping
+            // every frame forever.
+            val actual = sizeForNv21Length(buffer.remaining())
+            if (actual == null) {
+                if (framesReceived <= 3L) {
+                    Log.w(TAG, "unrecognised frame length ${buffer.remaining()} (expected $expected) — dropping")
+                }
+                return@IFrameCallback
+            }
+            Log.i(TAG, "frame size corrected: ${width}x$height → ${actual.width}x${actual.height}")
+            frameWidth = actual.width
+            frameHeight = actual.height
+            width = actual.width
+            height = actual.height
+            expected = width * height * 3 / 2
+            // Tell the page about the real resolution so its canvas matches.
+            sink.onCameraOpen(width, height, cameraLabel, transport)
+        }
 
         val nv21 = ByteArray(expected)
         buffer.get(nv21, 0, expected)
@@ -230,7 +358,15 @@ class UvcCameraSource(
         encodeHandler?.post {
             try {
                 val jpeg = nv21ToJpeg(nv21, width, height, Config.JPEG_QUALITY)
-                if (jpeg != null) sink.onFrame(Base64.encodeToString(jpeg, Base64.NO_WRAP))
+                if (jpeg != null) {
+                    framesEncoded++
+                    // First frame and then a heartbeat: enough to prove the pipeline is
+                    // alive in a field log without flooding it.
+                    if (framesEncoded == 1L || framesEncoded % 120L == 0L) {
+                        Log.i(TAG, "frame #$framesEncoded ${width}x$height ${jpeg.size / 1024}KB")
+                    }
+                    sink.onFrame(Base64.encodeToString(jpeg, Base64.NO_WRAP))
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "encode failed", e)
             } finally {
@@ -241,18 +377,25 @@ class UvcCameraSource(
 
     // ---------------------------------------------------------------- internals
 
+    /** Finds the advertised size whose NV21 frame is exactly [length] bytes. */
+    private fun sizeForNv21Length(length: Int): Size? =
+        supportedSizes.firstOrNull { it.width * it.height * 3 / 2 == length }
+
     private fun pickSize(h: ICameraHelper): Size? {
         val sizes = try {
             h.supportedSizeList
         } catch (e: Exception) {
+            Log.w(TAG, "supportedSizeList failed", e)
             null
         } ?: return null
         if (sizes.isEmpty()) return null
 
+        Log.i(TAG, "supported sizes: " + sizes.joinToString { "${it.width}x${it.height}@${it.fps}(type=${it.type})" })
+
         val target = Config.CAPTURE_WIDTH * Config.CAPTURE_HEIGHT
-        return sizes.minByOrNull { size ->
-            kotlin.math.abs(size.width * size.height - target)
-        }
+        val picked = sizes.minByOrNull { size -> kotlin.math.abs(size.width * size.height - target) }
+        Log.i(TAG, "picked size ${picked?.width}x${picked?.height}")
+        return picked
     }
 
     private fun attachOffscreenSurface(h: ICameraHelper, width: Int, height: Int) {
@@ -292,6 +435,7 @@ class UvcCameraSource(
     companion object {
         private const val TAG = "UvcCameraSource"
         private const val SURFACE_TEXTURE_NAME = 10
+        private const val MAX_OPEN_ATTEMPTS = 4
     }
 }
 

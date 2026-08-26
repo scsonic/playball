@@ -22,15 +22,24 @@ object Config {
     /** Used when USE_BUNDLED_SITE is false. */
     const val REMOTE_URL = "https://scsonic.github.io/playball/claude/"
 
-    /** Requested capture size. The closest size the camera actually offers is used. */
-    const val CAPTURE_WIDTH = 1280
-    const val CAPTURE_HEIGHT = 720
+    /**
+     * Requested capture size. The closest size the camera actually offers is used.
+     *
+     * VGA on purpose: hand tracking does not benefit from more pixels, while every
+     * extra pixel costs NV21→JPEG encoding time on the device and bytes across the
+     * JavaScript bridge. 640×480 keeps a 1080p signage kiosk responsive.
+     */
+    const val CAPTURE_WIDTH = 640
+    const val CAPTURE_HEIGHT = 480
 
     /**
-     * Frames handed to the WebView per second. Hand tracking needs 24–30 FPS; going
-     * higher only costs JPEG encoding time and bridge traffic.
+     * Frames handed to the WebView per second.
+     *
+     * 10 is plenty for palm tracking: the cursor is smoothed and rendered at display
+     * rate regardless, so the extra frames mostly buy encoding cost. Raise it if the
+     * hardware has headroom.
      */
-    const val TARGET_FPS = 24
+    const val TARGET_FPS = 10
 
     /** JPEG quality for the bridge frames. 55–70 is the sweet spot for tracking. */
     const val JPEG_QUALITY = 62

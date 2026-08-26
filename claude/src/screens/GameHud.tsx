@@ -76,8 +76,9 @@ export function GameHud({
         </div>
       )}
 
-      {/* Reset lives in the bottom-left corner, away from the catch corridor. */}
-      <div className="pointer-events-auto flex justify-start">
+      {/* Reset sits bottom-right: away from the catch corridor, and clear of the
+          camera monitor in the opposite corner. */}
+      <div className="pointer-events-auto flex justify-end">
         <DwellButton id="game-reset" variant="ghost" durationMs={2600} onSelect={onReset}>
           ↺ {dict.reset}
         </DwellButton>

@@ -41,6 +41,8 @@ export interface CampaignConfig {
   apiBaseUrl: string;
   /** Keyboard shortcut (with Ctrl+Alt) that opens the admin panel. */
   adminShortcutKey: string;
+  /** Small live camera monitor in the bottom-left corner. */
+  showCameraMonitor: boolean;
   cameraWidth: number;
   cameraHeight: number;
 }
@@ -81,6 +83,7 @@ export const DEFAULT_CONFIG: CampaignConfig = {
   campaignUrl: env.VITE_CAMPAIGN_URL || 'https://campaign.example.com/itoen-catch',
   apiBaseUrl: env.VITE_API_URL || '',
   adminShortcutKey: 'd',
+  showCameraMonitor: true,
   cameraWidth: 1280,
   cameraHeight: 720,
 };

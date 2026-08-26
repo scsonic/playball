@@ -56,8 +56,9 @@ export function CalibrationScreen({
       <h1 className="display text-[clamp(1.6rem,4vmin,4rem)]">{dict.calibrationTitle}</h1>
       <p className="subhead fade-loop text-[#8dc63f]">{instruction}</p>
 
-      <div className="flex w-full max-w-[150vmin] flex-1 items-center justify-center gap-[3vmin]">
-        <div className="panel relative aspect-video w-[62%] overflow-hidden p-[0.8vmin]">
+      {/* Portrait totems stack; landscape walls sit side by side. */}
+      <div className="flex w-full max-w-[150vmin] flex-1 flex-col items-center justify-center gap-[2vmin] landscape:flex-row landscape:gap-[3vmin]">
+        <div className="panel relative aspect-video w-full overflow-hidden p-[0.8vmin] landscape:w-[62%]">
           <video
             ref={videoRef}
             muted
@@ -80,7 +81,7 @@ export function CalibrationScreen({
           </div>
         </div>
 
-        <div className="panel flex w-[34%] flex-col gap-[1.4vmin] p-[2.4vmin]">
+        <div className="panel flex w-full flex-col gap-[1.4vmin] p-[2.4vmin] landscape:w-[34%]">
           <Status on={diagnostics.personDetected} label={dict.statusPerson} />
           <Status on={diagnostics.handDetected && diagnostics.correctHand} label={dict.statusHand} />
           <Status on={diagnostics.palmOpen} label={dict.statusPalm} />

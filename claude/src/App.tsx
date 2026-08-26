@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analytics, fpsBucket } from './analytics/Analytics';
 import { sound } from './audio/Sound';
+import { CameraMonitor } from './components/CameraMonitor';
 import { SponsorBadge } from './components/SponsorBadge';
 import { resolveAsset } from './config/asset-manifest';
 import { dispatch, store, useConfig, useGameState } from './core/store';
@@ -561,6 +562,13 @@ export function App() {
       )}
 
       <CursorLayer visible={menuCursorVisible} highContrast={state.highContrast} />
+
+      {/* Live camera monitor: the fastest on-site answer to "is the camera feeding
+          the game?", and it works the same for a webcam and a native USB host. */}
+      <CameraMonitor
+        config={config}
+        visible={config.showCameraMonitor && state.cameraReady && app !== 'CAMERA_CALIBRATION'}
+      />
 
       {state.demoWatermark && <div className="watermark">{dict.conceptDemo}</div>}
 

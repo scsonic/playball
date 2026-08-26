@@ -75,6 +75,9 @@ export function BootScreen({
               <DwellButton id="enable-camera" onSelect={onEnableCamera} disabled={busy}>
                 📷 {dict.enableCamera}
               </DwellButton>
+              {/* The vision model can take a while to arrive on a cold kiosk; never
+                  leave the player looking at a dimmed button with no explanation. */}
+              {busy && <p className="body-lg fade-loop opacity-80">{dict.preparingCamera}</p>}
               <DwellButton id="skip-camera" variant="ghost" onSelect={onSkipCamera}>
                 🖱 {dict.demoWithoutCamera}
               </DwellButton>

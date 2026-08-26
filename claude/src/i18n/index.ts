@@ -13,6 +13,7 @@ export interface Dictionary {
   bootTitle: string;
   bootSubtitle: string;
   bootLoading: string;
+  preparingCamera: string;
   privacyTitle: string;
   privacyLocal: string;
   privacyNoUpload: string;
@@ -102,6 +103,7 @@ const ja: Dictionary = {
   bootTitle: 'キャッチ・チャレンジ',
   bootSubtitle: 'コンセプト体験デモ / スポンサー提案用プロトタイプ',
   bootLoading: '準備中…',
+  preparingCamera: 'カメラとトラッキングを準備しています…',
   privacyTitle: 'カメラの利用について',
   privacyLocal: 'カメラ映像はこの端末のブラウザ内だけで処理されます',
   privacyNoUpload: '映像は保存も送信もされません',
@@ -191,6 +193,7 @@ const en: Dictionary = {
   bootTitle: 'Catch Challenge',
   bootSubtitle: 'Concept experience demo · sponsor proposal prototype',
   bootLoading: 'Preparing…',
+  preparingCamera: 'Preparing camera and tracking…',
   privacyTitle: 'About the camera',
   privacyLocal: 'Camera processing happens locally in your browser',
   privacyNoUpload: 'No camera video is stored or uploaded',
@@ -280,6 +283,7 @@ const zhTW: Dictionary = {
   bootTitle: '接球挑戰',
   bootSubtitle: '概念體驗展示 · 贊助提案原型',
   bootLoading: '準備中…',
+  preparingCamera: 'カメラとトラッキングを準備しています…',
   privacyTitle: '關於攝影機',
   privacyLocal: '影像僅在本機瀏覽器內處理',
   privacyNoUpload: '不會儲存或上傳任何影像',
