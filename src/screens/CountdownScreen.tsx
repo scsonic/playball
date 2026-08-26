@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { soundService } from '../audio/SoundService';
 import { Locale } from '../types/game';
 import { LOCALES } from '../locales';
@@ -14,32 +14,41 @@ export const CountdownScreen: React.FC<CountdownScreenProps> = ({
 }) => {
   const t = LOCALES[locale];
   const [count, setCount] = useState<number>(3);
+  const onCompleteRef = useRef(onCountdownComplete);
+  onCompleteRef.current = onCountdownComplete;
 
   useEffect(() => {
-    soundService.playCountdown(440 + (3 - count) * 110, 0.2);
+    let current = 3;
+    soundService.playCountdown(440, 0.2);
 
-    if (count > 1) {
-      const timer = setTimeout(() => {
-        setCount(count - 1);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else if (count === 1) {
-      const timer = setTimeout(() => {
-        setCount(0); // PLAY BALL / CATCH!
+    const interval = setInterval(() => {
+      current -= 1;
+      if (current > 0) {
+        setCount(current);
+        soundService.playCountdown(440 + (3 - current) * 110, 0.2);
+      } else if (current === 0) {
+        setCount(0); // PLAY BALL!
         soundService.playCountdown(880, 0.4);
-      }, 1000);
-      return () => clearTimeout(timer);
-    } else {
-      const timer = setTimeout(() => {
-        onCountdownComplete();
-      }, 700);
-      return () => clearTimeout(timer);
-    }
-  }, [count, onCountdownComplete]);
+      } else {
+        clearInterval(interval);
+        onCompleteRef.current();
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, []); // Run once on mount!
+
+  const handleSkip = () => {
+    onCompleteRef.current();
+  };
 
   return (
-    <div className="relative w-full h-full flex flex-col items-center justify-center p-8 text-white select-none pointer-events-none">
-      <div className="flex flex-col items-center z-10">
+    <div
+      onClick={handleSkip}
+      className="relative w-full h-full flex flex-col items-center justify-center p-8 text-white select-none cursor-pointer"
+      title="Click anywhere to start pitch immediately"
+    >
+      <div className="flex flex-col items-center z-10 pointer-events-none">
         <p className="text-xl sm:text-2xl font-black uppercase text-emerald-300 tracking-widest mb-4 bg-slate-900/70 px-6 py-2 rounded-full border border-emerald-500/40">
           {t.countdownGetReady}
         </p>
@@ -51,6 +60,10 @@ export const CountdownScreen: React.FC<CountdownScreenProps> = ({
             {count > 0 ? count : 'PLAY!'}
           </div>
         </div>
+
+        <p className="mt-8 text-xs font-bold text-slate-400 uppercase tracking-wider bg-slate-950/60 px-4 py-1.5 rounded-full border border-white/10">
+          Click anywhere to skip countdown
+        </p>
       </div>
     </div>
   );

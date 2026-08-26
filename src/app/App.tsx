@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { gameStateMachine, GameStoreState } from '../state/gameStateMachine';
 import { cameraManager } from '../vision/CameraManager';
 import { handTracker } from '../vision/HandTracker';
@@ -33,7 +33,6 @@ export const App: React.FC = () => {
     lightingQuality: 'good'
   };
 
-  const [trackingFrame, setTrackingFrame] = useState<TrackingFrame>(initialFrame);
   const trackingFrameRef = useRef<TrackingFrame>(initialFrame);
   const [dwellProgress, setDwellProgress] = useState<number>(0);
   const [isAdminOpen, setIsAdminOpen] = useState<boolean>(false);
@@ -53,8 +52,10 @@ export const App: React.FC = () => {
     return () => unsub();
   }, []);
 
-  // Main Tracking & Dwell Loop
+  // Main Tracking & Dwell Loop (Updates Ref & Dwell without causing 60 FPS full re-renders)
   useEffect(() => {
+    let lastDwellProgress = 0;
+
     const loop = (time: number) => {
       let currentFrame: TrackingFrame;
 
@@ -64,16 +65,13 @@ export const App: React.FC = () => {
         if (cameraFrame.handDetected) {
           currentFrame = cameraFrame;
         } else {
-          // Fallback to mouse if hand not in frame
           currentFrame = visionSimulator.getFrame(time);
         }
       } else {
-        // Direct Mouse tracking
         currentFrame = visionSimulator.getFrame(time);
       }
 
       trackingFrameRef.current = currentFrame;
-      setTrackingFrame(currentFrame);
 
       // 2. Update Dwell Selection
       const isGameplay = gameState.currentState === 'PITCHING' || gameState.currentState === 'COUNTDOWN';
@@ -83,7 +81,12 @@ export const App: React.FC = () => {
         currentFrame.velocity,
         isGameplay
       );
-      setDwellProgress(dwellRes.progress);
+
+      // Only trigger state update if progress changed meaningfully (saves re-renders)
+      if (Math.abs(dwellRes.progress - lastDwellProgress) > 0.05 || dwellRes.progress === 0 || dwellRes.progress === 1) {
+        lastDwellProgress = dwellRes.progress;
+        setDwellProgress(dwellRes.progress);
+      }
 
       // 3. Inactivity Auto-Reset in Trade-Show Kiosk
       if (currentFrame.velocity > 50 || dwellRes.clicked) {
@@ -118,7 +121,7 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const toggleFullscreen = () => {
+  const toggleFullscreen = useCallback(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch(() => {});
       setIsFullscreen(true);
@@ -126,32 +129,45 @@ export const App: React.FC = () => {
       document.exitFullscreen().catch(() => {});
       setIsFullscreen(false);
     }
-  };
+  }, []);
 
-  const handleEnableCamera = async () => {
+  const handleEnableCamera = useCallback(async () => {
     const success = await cameraManager.initialize();
     if (success) {
       await handTracker.initialize();
       gameStateMachine.transitionTo('CAMERA_CALIBRATION');
     } else {
-      // If camera access fails, fallback to mouse demo mode
       visionSimulator.enable();
       gameStateMachine.setMouseDemoMode(true);
       gameStateMachine.transitionTo('ATTRACT_MODE');
     }
-  };
+  }, []);
 
-  const handleStartMouseDemo = () => {
+  const handleStartMouseDemo = useCallback(() => {
     visionSimulator.enable();
     gameStateMachine.setMouseDemoMode(true);
     gameStateMachine.transitionTo('ATTRACT_MODE');
-  };
+  }, []);
 
-  const handleToggleTargetHand = () => {
-    const nextHand = targetHand === 'left' ? 'right' : 'left';
-    setTargetHand(nextHand);
-    handTracker.setTargetHand(nextHand);
-  };
+  const handleToggleTargetHand = useCallback(() => {
+    setTargetHand((prev) => {
+      const nextHand = prev === 'left' ? 'right' : 'left';
+      handTracker.setTargetHand(nextHand);
+      return nextHand;
+    });
+  }, []);
+
+  const handleStartGame = useCallback(() => {
+    gameStateMachine.startNewGame();
+  }, []);
+
+  const handleCountdownComplete = useCallback(() => {
+    gameStateMachine.transitionTo('PITCHING');
+  }, []);
+
+  const handleResetGame = useCallback(() => {
+    gameStateMachine.resetToAttract();
+  }, []);
 
   const isGameplayMode = gameState.currentState === 'PITCHING' || gameState.currentState === 'COUNTDOWN';
 
@@ -184,7 +200,7 @@ export const App: React.FC = () => {
       {gameState.currentState === 'CAMERA_CALIBRATION' && (
         <CalibrationScreen
           locale={gameState.locale}
-          trackingFrame={trackingFrame}
+          trackingFrame={trackingFrameRef.current}
           videoElement={cameraManager.getVideoElement()}
           targetHand={targetHand}
           onCalibrationComplete={() => gameStateMachine.transitionTo('ATTRACT_MODE')}
@@ -196,7 +212,7 @@ export const App: React.FC = () => {
       {gameState.currentState === 'ATTRACT_MODE' && (
         <AttractScreen
           locale={gameState.locale}
-          onStartGame={() => gameStateMachine.startNewGame()}
+          onStartGame={handleStartGame}
           onSelectLocale={(loc) => gameStateMachine.setLocale(loc)}
         />
       )}
@@ -204,7 +220,7 @@ export const App: React.FC = () => {
       {gameState.currentState === 'READY' && (
         <CountdownScreen
           locale={gameState.locale}
-          onCountdownComplete={() => gameStateMachine.transitionTo('PITCHING')}
+          onCountdownComplete={handleCountdownComplete}
         />
       )}
 
@@ -212,9 +228,9 @@ export const App: React.FC = () => {
         <GameplayScreen
           gameState={gameState}
           trackingFrameRef={trackingFrameRef}
-          trackingFrame={trackingFrame}
+          trackingFrame={trackingFrameRef.current}
           locale={gameState.locale}
-          onResetGame={() => gameStateMachine.resetToAttract()}
+          onResetGame={handleResetGame}
         />
       )}
 
@@ -222,13 +238,13 @@ export const App: React.FC = () => {
         <ResultScreen
           gameState={gameState}
           locale={gameState.locale}
-          onPlayAgain={() => gameStateMachine.startNewGame()}
+          onPlayAgain={handleStartGame}
         />
       )}
 
       {/* Dynamic Hand / Glove Dwell Cursor */}
       <HandCursor
-        trackingFrame={trackingFrame}
+        trackingFrameRef={trackingFrameRef}
         dwellProgress={dwellProgress}
         isGameplayMode={isGameplayMode}
         targetRadiusPx={140}
@@ -238,7 +254,7 @@ export const App: React.FC = () => {
       <AdminDebugModal
         isOpen={isAdminOpen}
         onClose={() => setIsAdminOpen(false)}
-        trackingFrame={trackingFrame}
+        trackingFrame={trackingFrameRef.current}
         gameState={gameState}
         videoElement={cameraManager.getVideoElement()}
         onSimulateWin={() => {
@@ -255,7 +271,7 @@ export const App: React.FC = () => {
           gameStateMachine.recordMiss();
           gameStateMachine.transitionTo('GAME_RESULT');
         }}
-        onReset={() => gameStateMachine.resetToAttract()}
+        onReset={handleResetGame}
       />
     </main>
   );
