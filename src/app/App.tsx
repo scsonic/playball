@@ -217,14 +217,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {gameState.currentState === 'READY' && (
-        <CountdownScreen
-          locale={gameState.locale}
-          onCountdownComplete={handleCountdownComplete}
-        />
-      )}
-
-      {gameState.currentState === 'PITCHING' && (
+      {(gameState.currentState === 'READY' || gameState.currentState === 'PITCHING') && (
         <GameplayScreen
           gameState={gameState}
           trackingFrameRef={trackingFrameRef}

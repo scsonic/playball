@@ -1,7 +1,8 @@
-import React, { useEffect, useRef } from 'react';
-import { Trophy, RefreshCw, Activity } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { Trophy, RefreshCw, Activity, Sparkles } from 'lucide-react';
 import { gameEngine } from '../game/GameEngine';
 import { visionSimulator } from '../vision/VisionSimulator';
+import { soundService } from '../audio/SoundService';
 import { GameStoreState } from '../state/gameStateMachine';
 import { TrackingFrame, Locale } from '../types/game';
 import { LOCALES } from '../locales';
@@ -25,12 +26,13 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const t = LOCALES[locale];
 
+  const [countdownNum, setCountdownNum] = useState<number | null>(3);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     gameEngine.setCanvas(canvas);
-    gameEngine.startPitchSequence();
 
     const handlePointer = (e: MouseEvent | PointerEvent) => {
       visionSimulator.setSimulatedPosition(e.clientX, e.clientY, true);
@@ -41,7 +43,6 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
 
     let animationId: number;
     const loop = (time: number) => {
-      // Use live ref frame to ensure 60fps tracking without closure freeze
       const frame = trackingFrameRef.current;
       gameEngine.updateAndRender(time, frame);
       animationId = requestAnimationFrame(loop);
@@ -51,7 +52,27 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
     const handleResize = () => gameEngine.handleResize();
     window.addEventListener('resize', handleResize);
 
+    // Dynamic 3 -> 2 -> 1 -> PLAY! countdown
+    let currentCount = 3;
+    soundService.playCountdown(440, 0.2);
+
+    const countdownTimer = setInterval(() => {
+      currentCount -= 1;
+      if (currentCount > 0) {
+        setCountdownNum(currentCount);
+        soundService.playCountdown(440 + (3 - currentCount) * 110, 0.2);
+      } else if (currentCount === 0) {
+        setCountdownNum(0); // PLAY!
+        soundService.playCountdown(880, 0.35);
+      } else {
+        clearInterval(countdownTimer);
+        setCountdownNum(null);
+        gameEngine.startPitchSequence();
+      }
+    }, 750);
+
     return () => {
+      clearInterval(countdownTimer);
       cancelAnimationFrame(animationId);
       window.removeEventListener('mousemove', handlePointer);
       window.removeEventListener('pointermove', handlePointer);
@@ -59,15 +80,46 @@ export const GameplayScreen: React.FC<GameplayScreenProps> = ({
     };
   }, [trackingFrameRef]);
 
+  const handleSkipCountdown = () => {
+    if (countdownNum !== null) {
+      setCountdownNum(null);
+      gameEngine.startPitchSequence();
+    }
+  };
+
   const { currentPitchIndex, totalPitches, catchesCount, requiredCatches } = gameState;
 
   return (
-    <div className="relative w-full h-full overflow-hidden select-none cursor-crosshair">
+    <div
+      onClick={handleSkipCountdown}
+      className="relative w-full h-full overflow-hidden select-none cursor-crosshair"
+    >
       {/* 2.5D Canvas View */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full block"
       />
+
+      {/* Countdown Overlay (Floats smoothly directly over the stadium) */}
+      {countdownNum !== null && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-30 bg-black/30 backdrop-blur-[2px] transition-all">
+          <div className="flex flex-col items-center animate-pulse">
+            <span className="text-xl md:text-2xl font-black uppercase text-emerald-300 tracking-widest mb-3 bg-slate-950/80 px-6 py-2 rounded-full border border-emerald-500/50 shadow-xl flex items-center space-x-2">
+              <Sparkles className="w-5 h-5 text-amber-400" />
+              <span>{t.countdownGetReady}</span>
+            </span>
+
+            {/* Giant Gold Number */}
+            <div className="text-8xl sm:text-9xl md:text-[13rem] font-black gold-text-gradient stadium-text-stroke transform scale-110 drop-shadow-2xl">
+              {countdownNum > 0 ? countdownNum : 'PLAY!'}
+            </div>
+
+            <span className="mt-6 text-xs font-bold text-amber-200 uppercase tracking-wider bg-slate-900/80 px-4 py-1.5 rounded-full border border-amber-400/40">
+              Move glove to catch incoming balls • Click to skip
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Top HUD: Score & Pitch Trackers */}
       <div className="absolute top-6 left-6 right-6 flex items-center justify-between pointer-events-none z-20">
