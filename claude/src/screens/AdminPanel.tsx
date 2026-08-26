@@ -21,6 +21,7 @@ interface AdminPanelProps {
   onReset: () => void;
   onDifficulty: (difficulty: Difficulty) => void;
   onToggleDebug: () => void;
+  onToggleCameraFlip: () => void;
   onToggleWatermark: () => void;
 }
 
@@ -41,6 +42,7 @@ export function AdminPanel({
   onReset,
   onDifficulty,
   onToggleDebug,
+  onToggleCameraFlip,
   onToggleWatermark,
 }: AdminPanelProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -158,6 +160,7 @@ export function AdminPanel({
           <Row k="transport" v={camera.getTransport()} />
           <Row k="device" v={camera.getLabel()} />
           <Row k="resolution" v={`${camera.getResolution().width}x${camera.getResolution().height}`} />
+          <Row k="flipped" v={String(camera.isFlippedVertical())} />
           <Row k="host" v={externalCamera.status().host ?? 'none'} />
           <Row k="host frames" v={`${externalCamera.status().frames} (${externalCamera.status().dropped} dropped)`} />
         </Section>
@@ -178,6 +181,9 @@ export function AdminPanel({
           ))}
           <AdminButton active={config.enableDebugOverlay} onClick={onToggleDebug}>
             hitbox overlay
+          </AdminButton>
+          <AdminButton active={config.cameraFlipVertical} onClick={onToggleCameraFlip}>
+            flip camera ⇅
           </AdminButton>
           <AdminButton active={state.demoWatermark} onClick={onToggleWatermark}>
             demo watermark

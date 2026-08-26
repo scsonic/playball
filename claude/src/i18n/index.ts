@@ -39,6 +39,7 @@ export interface Dictionary {
   statusLighting: string;
   statusDistance: string;
   calibrationProgress: string;
+  flipCamera: string;
   handModeLeft: string;
   handModeRight: string;
   skipCalibration: string;
@@ -129,6 +130,7 @@ const ja: Dictionary = {
   statusLighting: '明るさ',
   statusDistance: 'カメラとの距離',
   calibrationProgress: 'キャリブレーション',
+  flipCamera: 'カメラ上下反転',
   handModeLeft: '左手モード',
   handModeRight: '右手モード',
   skipCalibration: 'スキップ',
@@ -219,6 +221,7 @@ const en: Dictionary = {
   statusLighting: 'Lighting',
   statusDistance: 'Camera distance',
   calibrationProgress: 'Calibration',
+  flipCamera: 'Flip camera',
   handModeLeft: 'Left-hand mode',
   handModeRight: 'Right-hand mode',
   skipCalibration: 'Skip',
@@ -309,6 +312,7 @@ const zhTW: Dictionary = {
   statusLighting: '光線',
   statusDistance: '與攝影機距離',
   calibrationProgress: '校正進度',
+  flipCamera: '上下翻轉畫面',
   handModeLeft: '左手模式',
   handModeRight: '右手模式',
   skipCalibration: '略過',

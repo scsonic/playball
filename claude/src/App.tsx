@@ -26,6 +26,7 @@ import { externalCamera } from './vision/ExternalCamera';
 import { handTracker } from './vision/HandTracker';
 import { pointerSource } from './vision/PointerSource';
 
+const FLIP_STORAGE_KEY = 'catch-challenge.cameraFlipVertical';
 const CALIBRATION_HOLD_SECONDS = 1.0;
 const READY_HOLD_SECONDS = 1.4;
 /** States where a stray dwell must not be able to fire UI. */
@@ -72,6 +73,16 @@ export function App() {
     };
     pointerSource.attachDom();
     pointerSource.applyConfig(store.getConfig());
+
+    // Restore the per-installation camera orientation before anything opens a camera.
+    try {
+      if (localStorage.getItem(FLIP_STORAGE_KEY) === 'true') {
+        dispatch({ type: 'TOGGLE_CAMERA_FLIP' });
+        camera.setFlipVertical(true);
+      }
+    } catch {
+      /* storage unavailable */
+    }
     createCouponService(store.getConfig()).then((service) => {
       couponService.current = service;
     });
@@ -124,6 +135,7 @@ export function App() {
   useEffect(() => {
     pointerSource.applyConfig(config);
     gameEngine.applyConfig(config);
+    camera.setFlipVertical(config.cameraFlipVertical);
     dwellEngine.setOptions({
       durationMs: config.dwellClickDurationMs,
       velocityPauseAt: config.dwellVelocityPausePx,
@@ -436,6 +448,21 @@ export function App() {
     dispatch({ type: 'SET_HAND_MODE', handMode });
   }, []);
 
+  /**
+   * Flip the camera image. Remembered per installation: an inverted mount does not
+   * become upright between visitors, and nobody wants to set this every morning.
+   */
+  const handleFlipCamera = useCallback(() => {
+    sound.play('select');
+    const next = dispatch({ type: 'TOGGLE_CAMERA_FLIP' });
+    camera.setFlipVertical(next.cameraFlipVertical);
+    try {
+      localStorage.setItem(FLIP_STORAGE_KEY, String(next.cameraFlipVertical));
+    } catch {
+      /* private mode / storage disabled — the setting simply will not persist */
+    }
+  }, []);
+
   const handleClaim = useCallback(() => {
     sound.play('select');
     analytics.track('coupon_claim_clicked');
@@ -502,7 +529,9 @@ export function App() {
           diagnostics={uiTick.diagnostics as TrackingDiagnostics}
           progress={uiTick.calibration}
           handMode={state.handMode}
+          flipVertical={state.cameraFlipVertical}
           onHandMode={handleHandMode}
+          onFlipVertical={handleFlipCamera}
           onSkip={() => dispatch({ type: 'CALIBRATED' })}
         />
       )}
@@ -568,6 +597,8 @@ export function App() {
       <CameraMonitor
         config={config}
         visible={config.showCameraMonitor && state.cameraReady && app !== 'CAMERA_CALIBRATION'}
+        onFlip={handleFlipCamera}
+        flipLabel={dict.flipCamera}
       />
 
       {state.demoWatermark && <div className="watermark">{dict.conceptDemo}</div>}
@@ -595,6 +626,7 @@ export function App() {
           const next = dispatch({ type: 'TOGGLE_DEBUG' });
           store.patchConfig({ enableDebugOverlay: next.debugOverlay });
         }}
+        onToggleCameraFlip={handleFlipCamera}
         onToggleWatermark={() => dispatch({ type: 'TOGGLE_WATERMARK' })}
       />
     </div>

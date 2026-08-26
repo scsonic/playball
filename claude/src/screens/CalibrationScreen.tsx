@@ -11,7 +11,9 @@ interface CalibrationScreenProps {
   diagnostics: TrackingDiagnostics;
   progress: number;
   handMode: HandMode;
+  flipVertical: boolean;
   onHandMode: (mode: HandMode) => void;
+  onFlipVertical: () => void;
   onSkip: () => void;
 }
 
@@ -25,7 +27,9 @@ export function CalibrationScreen({
   diagnostics,
   progress,
   handMode,
+  flipVertical,
   onHandMode,
+  onFlipVertical,
   onSkip,
 }: CalibrationScreenProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -108,6 +112,16 @@ export function CalibrationScreen({
               onSelect={() => onHandMode('right')}
             >
               {dict.handModeRight}
+            </DwellButton>
+            {/* Inverted camera mounts: flipping here corrects the frames themselves,
+                so tracking follows the picture. */}
+            <DwellButton
+              id="flip-camera"
+              variant="chip"
+              className={flipVertical ? 'chip-active' : ''}
+              onSelect={onFlipVertical}
+            >
+              {flipVertical ? '☑' : '☐'} ⇅ {dict.flipCamera}
             </DwellButton>
           </div>
 

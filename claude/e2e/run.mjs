@@ -293,6 +293,52 @@ async function main() {
       assert(state.app !== 'CAMERA_ERROR', 'host camera was not accepted');
     });
 
+    await test('flip camera inverts the frames themselves, not just the preview', async () => {
+      const result = await page.evaluate(async () => {
+        const api = window.CatchChallenge.camera;
+        const external = window.__catchChallenge.externalCamera;
+
+        // A frame with an unmistakable top: white band up top, black below.
+        const c = document.createElement('canvas');
+        c.width = 64;
+        c.height = 48;
+        const ctx = c.getContext('2d');
+        const paint = () => {
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, 64, 48);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, 64, 12);
+          return c.toDataURL('image/jpeg', 0.95).split(',')[1];
+        };
+
+        const push = async () => {
+          api.pushFrame(paint());
+          await new Promise((r) => setTimeout(r, 250));
+          const source = external.getSource();
+          const sctx = source.getContext('2d');
+          const top = sctx.getImageData(source.width / 2, 3, 1, 1).data[0];
+          const bottom = sctx.getImageData(source.width / 2, source.height - 4, 1, 1).data[0];
+          return { top, bottom };
+        };
+
+        api.open({ width: 64, height: 48, label: 'flip-test' });
+        const upright = await push();
+
+        external.setFlipVertical(true);
+        const flipped = await push();
+
+        external.setFlipVertical(false);
+        return { upright, flipped };
+      });
+
+      assert(result.upright.top > 200, `expected a white top, got ${result.upright.top}`);
+      assert(result.upright.bottom < 60, `expected a black bottom, got ${result.upright.bottom}`);
+      // After flipping, the white band must be at the bottom of the decoded frame —
+      // the surface MediaPipe reads, so landmark coordinates follow the picture.
+      assert(result.flipped.top < 60, `flip did not move the band off the top: ${result.flipped.top}`);
+      assert(result.flipped.bottom > 200, `flip did not move the band to the bottom: ${result.flipped.bottom}`);
+    });
+
     console.log('\nLayout');
     for (const [label, viewport] of [
       ['1920×1080 landscape', { width: 1920, height: 1080 }],

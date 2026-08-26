@@ -1,12 +1,16 @@
 import { useEffect, useRef } from 'react';
 import type { CampaignConfig } from '../config/campaign.config';
 import { TickPriority, ticker } from '../core/ticker';
+import { DwellButton } from '../interaction/DwellButton';
 import { camera } from '../vision/Camera';
 import { pointerSource } from '../vision/PointerSource';
 
 interface CameraMonitorProps {
   config: CampaignConfig;
   visible: boolean;
+  /** Flip the feed top-to-bottom — the fix for an inverted camera mount. */
+  onFlip?: () => void;
+  flipLabel?: string;
 }
 
 /**
@@ -20,7 +24,7 @@ interface CameraMonitorProps {
  * Everything updates through the shared ticker and writes directly to the DOM, so the
  * monitor never triggers a React render.
  */
-export function CameraMonitor({ config, visible }: CameraMonitorProps) {
+export function CameraMonitor({ config, visible, onFlip, flipLabel }: CameraMonitorProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const statsRef = useRef<HTMLSpanElement>(null);
@@ -148,6 +152,24 @@ export function CameraMonitor({ config, visible }: CameraMonitorProps) {
         >
           —
         </span>
+        {onFlip && (
+          // Where the problem is noticed is where the fix should be: if the feed is
+          // upside down, it is upside down right here.
+          <div className="pointer-events-auto ml-auto">
+            <DwellButton
+              id="monitor-flip"
+              variant="chip"
+              durationMs={2600}
+              className={`!px-[0.7vmin] !py-[0.2vmin] !text-[clamp(0.5rem,0.95vmin,0.8rem)] ${
+                config.cameraFlipVertical ? 'chip-active' : ''
+              }`}
+              ariaLabel={flipLabel}
+              onSelect={onFlip}
+            >
+              ⇅
+            </DwellButton>
+          </div>
+        )}
       </div>
     </div>
   );

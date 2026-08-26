@@ -42,6 +42,7 @@ npm run e2e            # 19 end-to-end tests (Playwright + your installed Chrome
 | Dwell 2 s | Activates the control under the cursor |
 | Mouse / touch | Moves the cursor; click or tap activates immediately |
 | Arrow keys | Move the cursor; **Enter** / **Space** activates |
+| **Flip camera ⇅** | Corrects an upside-down camera mount — on the calibration screen, on the camera monitor, or in the operator panel. Remembered per installation |
 | **Ctrl+Alt+D** | Operator panel (tracking, FPS, hitbox, asset status, simulate win/lose) |
 | **Ctrl+Alt+R** | Reset the session |
 | **Esc** | Close the operator panel |
@@ -128,6 +129,17 @@ whatever camera the WebView happens to expose — which would run the activation
 wrong device. Hosts report failures with `fail(reason)` so the game reacts immediately
 rather than waiting out its 9-second timeout. See
 [`android/README.md`](../android/README.md) for the reference implementation.
+
+## Camera monitor and orientation
+
+A small live camera window sits in the bottom-left corner (`showCameraMonitor`) showing the
+feed, resolution, frame rate, transport and the tracked hand. On site it answers "is the
+camera actually feeding the game?" in one glance, without attaching a laptop.
+
+Inverted mounts are corrected with **Flip camera ⇅**. The flip is applied to the frames
+before inference — never as a CSS transform on a preview — so the picture and the hand
+coordinates always agree, on both the webcam and host transports. The choice is stored in
+`localStorage`, because a camera bolted upside down stays that way between visitors.
 
 ## Privacy
 

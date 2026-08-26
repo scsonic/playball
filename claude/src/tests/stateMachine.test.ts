@@ -168,3 +168,19 @@ describe('camera fallbacks', () => {
     expect(mouse.inputMode).toBe('mouse');
   });
 });
+
+describe('camera orientation', () => {
+  it('toggles the vertical flip and keeps it across a game', () => {
+    const base = createInitialState();
+    expect(base.cameraFlipVertical).toBe(false);
+
+    const flipped = reduce(base, { type: 'TOGGLE_CAMERA_FLIP' }, RULES);
+    expect(flipped.cameraFlipVertical).toBe(true);
+
+    // An inverted mount stays inverted: resetting the session must not undo it.
+    const afterReset = run(flipped, [{ type: 'RESET', reason: 'inactivity' }, { type: 'RESET_COMPLETE' }]);
+    expect(afterReset.cameraFlipVertical).toBe(true);
+
+    expect(reduce(flipped, { type: 'TOGGLE_CAMERA_FLIP' }, RULES).cameraFlipVertical).toBe(false);
+  });
+});

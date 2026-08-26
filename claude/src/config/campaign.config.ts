@@ -10,6 +10,8 @@ export interface CampaignConfig {
   /** Base catch radius at a 1080p-tall display; scaled responsively at runtime. */
   palmCatchRadiusPx: number;
   cameraMirrored: boolean;
+  /** Flip the camera image top-to-bottom (some ceiling/inverted mounts need it). */
+  cameraFlipVertical: boolean;
   inactivityResetSeconds: number;
   couponExpirationMinutes: number;
   demoMode: boolean;
@@ -58,6 +60,7 @@ export const DEFAULT_CONFIG: CampaignConfig = {
   cursorSmoothing: 0.75,
   palmCatchRadiusPx: 140,
   cameraMirrored: true,
+  cameraFlipVertical: false,
   inactivityResetSeconds: 30,
   couponExpirationMinutes: 15,
   demoMode: true,

@@ -66,6 +66,7 @@ class ExternalCamera {
   private closeReason: string | null = null;
   private closedAt = 0;
   private requestedAt = 0;
+  private flipVertical = false;
   private listeners = new Set<Listener>();
 
   // ------------------------------------------------------------ host-facing API
@@ -73,6 +74,17 @@ class ExternalCamera {
   registerHost(host: HostRegistration) {
     this.host = host;
     this.emit();
+  }
+
+  /**
+   * Flip incoming frames top-to-bottom.
+   *
+   * Applied while decoding, i.e. *before* anything reads the canvas, so hand
+   * tracking and the preview both see the corrected image and landmark
+   * coordinates need no compensation anywhere downstream.
+   */
+  setFlipVertical(flip: boolean) {
+    this.flipVertical = flip;
   }
 
   hasHost(): boolean {
@@ -221,6 +233,7 @@ class ExternalCamera {
       msSinceFrame: this.lastFrameAt ? Date.now() - this.lastFrameAt : null,
       closeReason: this.closeReason,
       exclusive: this.isExclusive(),
+      flipVertical: this.flipVertical,
     };
   }
 
@@ -257,7 +270,15 @@ class ExternalCamera {
     try {
       const bitmap = await decodeJpeg(data);
       this.ensureCanvas(bitmap.width, bitmap.height);
-      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      if (this.flipVertical) {
+        ctx.save();
+        ctx.translate(0, canvas.height);
+        ctx.scale(1, -1);
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+        ctx.restore();
+      } else {
+        ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      }
       if ('close' in bitmap) bitmap.close();
 
       const wasActive = this.frames > 0;

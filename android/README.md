@@ -114,6 +114,18 @@ game editions).
   the game's own recoverable camera-error screen. Re-plugging restarts capture
   automatically (`USB_DEVICE_ATTACHED`).
 
+## Capture settings
+
+`Config.kt` captures **640×480 at 10 FPS**. Hand tracking gains nothing from more pixels,
+while every extra pixel costs NV21→JPEG encoding on the device and bytes across the bridge.
+The frame size is taken from the size actually asked for and self-corrects from the real
+buffer length, because `previewSize` still reports the previous resolution immediately after
+`setPreviewSize` on this library version — a mismatch there silently drops every frame.
+
+If the camera is mounted upside down, use **Flip camera ⇅** in the web UI (calibration
+screen, camera monitor, or operator panel). It flips the frames before inference, so
+tracking follows the picture.
+
 ## Kiosk behaviour
 
 Immersive full screen, screen kept on, `singleTask` launch, back button confined to the

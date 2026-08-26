@@ -42,6 +42,9 @@ export class Camera {
   private transport: CameraTransport = 'webcam';
   private onLostCallback: ((code: CameraErrorCode) => void) | null = null;
   private hostWatchdog: number | null = null;
+  private flipVertical = false;
+  private flipCanvas: HTMLCanvasElement | null = null;
+  private flipStream: MediaStream | null = null;
 
   isSecure(): boolean {
     if (typeof window === 'undefined') return false;
@@ -51,6 +54,26 @@ export class Camera {
   /** True when a native shell has published a camera host. */
   hasHost(): boolean {
     return externalCamera.hasHost();
+  }
+
+  /**
+   * Flip the camera image top-to-bottom.
+   *
+   * Some kiosk mounts hang the camera upside down. The flip is applied to the frames
+   * *before* inference — never as a CSS transform on a preview — so the picture and
+   * the hand coordinates always agree, whichever transport is feeding the game.
+   */
+  setFlipVertical(flip: boolean) {
+    if (this.flipVertical === flip) return;
+    this.flipVertical = flip;
+    externalCamera.setFlipVertical(flip);
+    // The preview stream is bound to whichever surface we hand out; drop it so the
+    // next request rebuilds it from the right one.
+    this.flipStream = null;
+  }
+
+  isFlippedVertical(): boolean {
+    return this.flipVertical;
   }
 
   async start(width = 1280, height = 720, hostTimeoutMs = 9000): Promise<CameraStartResult> {
@@ -173,7 +196,31 @@ export class Camera {
   /** The surface inference should read from. */
   getSource(): FrameSource | null {
     if (this.transport === 'host') return externalCamera.getSource();
-    return this.video;
+    if (!this.video) return null;
+    if (!this.flipVertical) return this.video;
+    return this.drawFlipped(this.video);
+  }
+
+  /** Webcam frames pass through a canvas when they need flipping. */
+  private drawFlipped(video: HTMLVideoElement): FrameSource {
+    if (video.readyState < 2 || video.videoWidth === 0) return video;
+
+    if (!this.flipCanvas) this.flipCanvas = document.createElement('canvas');
+    const canvas = this.flipCanvas;
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      this.flipStream = null;
+    }
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return video;
+
+    ctx.save();
+    ctx.translate(0, canvas.height);
+    ctx.scale(1, -1);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    return canvas;
   }
 
   /** Changes whenever a new frame is available, so inference can skip duplicates. */
@@ -185,6 +232,12 @@ export class Camera {
   /** A MediaStream suitable for a preview <video>, whatever the transport. */
   getPreviewStream(): MediaStream | null {
     if (this.transport === 'host') return externalCamera.getPreviewStream();
+    if (this.flipVertical && this.flipCanvas) {
+      if (!this.flipStream || this.flipStream.getVideoTracks().every((t) => t.readyState === 'ended')) {
+        this.flipStream = this.flipCanvas.captureStream(24);
+      }
+      return this.flipStream;
+    }
     return this.stream;
   }
 
@@ -235,6 +288,7 @@ export class Camera {
   stop() {
     this.stopHostWatchdog();
     this.stopWebcam();
+    this.flipStream = null;
   }
 
   /** Full teardown, including the DOM node — used by the kiosk reset path. */

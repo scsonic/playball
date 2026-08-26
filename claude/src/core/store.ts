@@ -83,6 +83,9 @@ class Store {
     if (next.handMode !== previous.handMode) {
       this.setConfig({ ...this.config, handMode: next.handMode });
     }
+    if (next.cameraFlipVertical !== previous.cameraFlipVertical) {
+      this.setConfig({ ...this.config, cameraFlipVertical: next.cameraFlipVertical });
+    }
 
     this.listeners.forEach((l) => l());
     return next;

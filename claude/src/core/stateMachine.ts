@@ -52,6 +52,8 @@ export interface GameState {
   reducedMotion: boolean;
   highContrast: boolean;
   debugOverlay: boolean;
+  /** Camera image is flipped top-to-bottom (inverted mount). */
+  cameraFlipVertical: boolean;
   demoWatermark: boolean;
   errorCode: string | null;
   lastInteractionAt: number;
@@ -83,6 +85,7 @@ export type GameAction =
   | { type: 'TOGGLE_AUDIO' }
   | { type: 'TOGGLE_REDUCED_MOTION' }
   | { type: 'TOGGLE_HIGH_CONTRAST' }
+  | { type: 'TOGGLE_CAMERA_FLIP' }
   | { type: 'TOGGLE_DEBUG' }
   | { type: 'TOGGLE_WATERMARK' }
   | { type: 'SET_INPUT_MODE'; mode: InputMode }
@@ -115,6 +118,7 @@ export function createInitialState(overrides: Partial<GameState> = {}): GameStat
     reducedMotion: false,
     highContrast: false,
     debugOverlay: false,
+    cameraFlipVertical: false,
     demoWatermark: true,
     errorCode: null,
     lastInteractionAt: 0,
@@ -251,6 +255,8 @@ export function reduce(state: GameState, action: GameAction, rules: SessionRules
       return { ...state, reducedMotion: !state.reducedMotion };
     case 'TOGGLE_HIGH_CONTRAST':
       return { ...state, highContrast: !state.highContrast };
+    case 'TOGGLE_CAMERA_FLIP':
+      return { ...state, cameraFlipVertical: !state.cameraFlipVertical };
     case 'TOGGLE_DEBUG':
       return { ...state, debugOverlay: !state.debugOverlay };
     case 'TOGGLE_WATERMARK':
