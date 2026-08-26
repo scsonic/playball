@@ -12,7 +12,9 @@ export class DwellController {
   private dwellStartTime: number = 0;
   private dwellDurationMs: number = 2000;
   private progress: number = 0; // 0..1
-  private lastClickTime: number = 0;
+  // -Infinity, not 0: with performance.now() starting near zero there would
+  // otherwise be a phantom cooldown during the first 600ms after load.
+  private lastClickTime: number = -Infinity;
   private cooldownMs: number = 600;
   private maxVelocityThreshold: number = 180; // px/s
 
